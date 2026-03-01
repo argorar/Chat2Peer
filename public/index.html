@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P WebRTC Chat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-background">
+        <div class="mesh-gradient"></div>
+    </div>
+
+    <div class="chat-container">
+        <header class="chat-header">
+            <div class="header-title">
+                <h1>Secure P2P Chat</h1>
+                <span class="subtitle">Direct browser-to-browser</span>
+            </div>
+            <div id="connection-status" class="status disconnected">Disconnected</div>
+        </header>
+
+        <div id="setup-container">
+            <button id="start-btn" class="btn primary btn-glow">Enter Lounge</button>
+            <p id="setup-hint" class="hint">Click to connect to the signaling server and wait for a peer.</p>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+            <div class="message system">
+                Welcome to the P2P Chat. Messages are sent securely over WebRTC Data Channels.
+            </div>
+        </div>
+
+        <div class="emoji-bar" id="emoji-bar">
+            <button class="emoji-btn" data-emoji="👍">👍</button>
+            <button class="emoji-btn" data-emoji="❤️">❤️</button>
+            <button class="emoji-btn" data-emoji="😂">😂</button>
+            <button class="emoji-btn" data-emoji="😮">😮</button>
+            <button class="emoji-btn" data-emoji="😢">😢</button>
+            <button class="emoji-btn" data-emoji="🔥">🔥</button>
+            <button class="emoji-btn" data-emoji="🎉">🎉</button>
+        </div>
+
+        <div class="chat-input-area">
+            <input type="text" id="message-input" placeholder="Type an encrypted message..." disabled
+                autocomplete="off">
+            <button id="send-btn" class="btn send-btn" disabled>
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
