@@ -428,3 +428,162 @@ input[type="text"]:disabled {
         opacity: 0;
     }
 }
+
+/* Klipy GIF Container */
+.klipy-container {
+    position: absolute;
+    bottom: 90px;
+    right: 32px;
+    width: 320px;
+    height: 400px;
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    overflow: hidden;
+    animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transform-origin: bottom right;
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.klipy-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.klipy-header input {
+    flex: 1;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.klipy-header input:focus {
+    border-color: rgba(59, 130, 246, 0.4);
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.klipy-results {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    display: grid;
+    /* Use a responsive grid with consistent sizing */
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 80px;
+    gap: 10px;
+    align-content: start;
+    /* Smooth scrolling for mobile */
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Custom scrollbar for Klipy Results Grid */
+.klipy-results::-webkit-scrollbar {
+    width: 6px;
+}
+
+.klipy-results::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+.klipy-results::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.klipy-results::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.klipy-results.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.klipy-results.loading::after {
+    content: '';
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: twist 1s linear infinite;
+}
+
+@keyframes twist {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.gif-item {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+.gif-item:hover {
+    transform: scale(1.1);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    z-index: 10;
+    position: relative;
+    border: 2px solid var(--accent-color);
+}
+
+.klipy-footer {
+    padding: 6px 12px;
+    border-top: 1px solid var(--panel-border);
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+.klipy-footer small {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+}
+
+.message .gif-container {
+    margin-top: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: inline-block;
+}
+
+.message .gif-content {
+    height: 150px !important;
+    width: auto !important;
+    display: block;
+    border-radius: 4px;
+}

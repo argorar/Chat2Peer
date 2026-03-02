@@ -36,17 +36,28 @@
 
         <div class="emoji-bar" id="emoji-bar">
             <button class="emoji-btn" data-emoji="👍">👍</button>
-            <button class="emoji-btn" data-emoji="❤️">❤️</button>
+            <button class="emoji-btn" data-emoji="🥰">🥰</button>
             <button class="emoji-btn" data-emoji="😂">😂</button>
-            <button class="emoji-btn" data-emoji="😮">😮</button>
-            <button class="emoji-btn" data-emoji="😢">😢</button>
+            <button class="emoji-btn" data-emoji="😲">😲</button>
+            <button class="emoji-btn" data-emoji="😭">😭</button>
             <button class="emoji-btn" data-emoji="🔥">🔥</button>
             <button class="emoji-btn" data-emoji="🎉">🎉</button>
+            <button class="emoji-btn" data-emoji="😘">😘</button>
+            <button class="emoji-btn" data-emoji="😍">😍</button>
+            <button class="emoji-btn" data-emoji="😎">😎</button>
         </div>
 
         <div class="chat-input-area">
             <input type="text" id="message-input" placeholder="Type an encrypted message..." disabled
                 autocomplete="off">
+            <button id="gif-btn" class="btn secondary" disabled title="Send GIF">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+            </button>
             <button id="send-btn" class="btn send-btn" disabled>
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -54,6 +65,20 @@
                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
             </button>
+        </div>
+
+        <!-- Klipy GIF Search Container (Hidden by default) -->
+        <div id="klipy-container" class="klipy-container" style="display: none;">
+            <div class="klipy-header">
+                <input type="text" id="klipy-search" placeholder="Search Klipy GIFs..." autocomplete="off">
+                <button id="klipy-close" class="btn secondary" style="padding: 4px 8px;">✕</button>
+            </div>
+            <div id="klipy-results" class="klipy-results">
+                <!-- GIF results will appear here -->
+            </div>
+            <div class="klipy-footer">
+                <small>Powered by Klipy</small>
+            </div>
         </div>
     </div>
 

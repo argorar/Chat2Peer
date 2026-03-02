@@ -7,6 +7,13 @@ const chatMessages = document.getElementById('chat-messages');
 const emojiButtons = document.querySelectorAll('.emoji-btn');
 const chatContainer = document.querySelector('.chat-container');
 
+// Klipy Elements
+const gifBtn = document.getElementById('gif-btn');
+const klipyContainer = document.getElementById('klipy-container');
+const klipySearch = document.getElementById('klipy-search');
+const klipyClose = document.getElementById('klipy-close');
+const klipyResults = document.getElementById('klipy-results');
+
 let ws;
 let peerConnection;
 let dataChannel;
@@ -176,6 +183,8 @@ function setupDataChannel() {
                 displayUserMessage(data.content, 'received');
             } else if (data.type === 'emoji') {
                 createFloatingEmoji(data.emoji);
+            } else if (data.type === 'gif') {
+                displayUserMessage(data.url, 'received', true);
             }
         } catch (e) {
             // Fallback for older plaintext messages if any
@@ -196,7 +205,9 @@ function handleDisconnect() {
 
     messageInput.disabled = true;
     sendBtn.disabled = true;
+    gifBtn.disabled = true;
     setEmojiButtonsDisabled(true);
+    klipyContainer.style.display = 'none';
 
     setupContainer.style.display = 'flex';
     startBtn.disabled = false;
@@ -210,6 +221,16 @@ function sendMessage() {
         dataChannel.send(JSON.stringify(payload));
         displayUserMessage(text, 'sent');
         messageInput.value = '';
+    }
+}
+
+function sendGifMessage(gifUrl) {
+    if (gifUrl && dataChannel?.readyState === 'open') {
+        const payload = { type: 'gif', url: gifUrl };
+        dataChannel.send(JSON.stringify(payload));
+        displayUserMessage(gifUrl, 'sent', true);
+        klipyContainer.style.display = 'none';
+        klipySearch.value = '';
     }
 }
 
@@ -241,10 +262,26 @@ function setEmojiButtonsDisabled(disabled) {
     emojiButtons.forEach(btn => btn.disabled = disabled);
 }
 
-function displayUserMessage(text, type) {
+function displayUserMessage(text, type, isGif = false) {
     const msgDiv = document.createElement('div');
     msgDiv.classList.add('message', type);
-    msgDiv.textContent = text;
+
+    if (isGif) {
+        msgDiv.style.background = 'transparent';
+        msgDiv.style.padding = '0';
+        msgDiv.style.border = 'none';
+        const img = document.createElement('img');
+        img.src = text;
+        img.classList.add('gif-content');
+
+        const container = document.createElement('div');
+        container.classList.add('gif-container');
+        container.appendChild(img);
+        msgDiv.appendChild(container);
+    } else {
+        msgDiv.textContent = text;
+    }
+
     appendMessageElement(msgDiv);
 }
 
@@ -267,7 +304,7 @@ function createFloatingEmoji(emojiChar) {
     emojiEl.style.left = `${randomLeft}%`;
 
     // Add jitter to animation duration
-    const randomDuration = 2.5 + Math.random() * 1.5;
+    const randomDuration = 2.5 + Math.random();
     emojiEl.style.animationDuration = `${randomDuration}s`;
 
     chatContainer.appendChild(emojiEl);
@@ -278,13 +315,116 @@ function createFloatingEmoji(emojiChar) {
     }, randomDuration * 1000);
 }
 
-// Enable emoji buttons when data channel opens
+// Enable emoji & gif buttons when data channel opens
 const originalSetupDataChannel = setupDataChannel;
 setupDataChannel = function () {
     originalSetupDataChannel();
     if (dataChannel) {
         dataChannel.addEventListener('open', () => {
             setEmojiButtonsDisabled(false);
+            gifBtn.disabled = false;
         });
     }
 };
+
+/* --- Klipy GIF Search Implementation --- */
+// Añade tu API Key de Klipy aquí (de lo contrario, los endpoints públicos funcionarán de forma limitada)
+const KLIPY_API_KEY = 'myMchPMlqDxJKpeSzJfOLCFrTpZqdqCLLF9Uf6RPKjxIPmeqxy6k5EPgo2PFivAI';
+let searchTimeout;
+
+// Toggle GIF container
+gifBtn.addEventListener('click', () => {
+    if (klipyContainer.style.display === 'none') {
+        klipyContainer.style.display = 'flex';
+        klipySearch.focus();
+        fetchTrendingGifs();
+    } else {
+        klipyContainer.style.display = 'none';
+    }
+});
+
+klipyClose.addEventListener('click', () => {
+    klipyContainer.style.display = 'none';
+});
+
+// Search input with debounce
+klipySearch.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value.trim();
+
+    if (query.length === 0) {
+        fetchTrendingGifs();
+        return;
+    }
+
+    // Klipy API recommends searching after a short delay
+    searchTimeout = setTimeout(() => {
+        searchKlipyGifs(query);
+    }, 500);
+});
+
+async function fetchTrendingGifs() {
+    klipyResults.innerHTML = '';
+    klipyResults.classList.add('loading');
+
+    try {
+        const url = KLIPY_API_KEY
+            ? `https://api.klipy.co/v2/gifs/trending?limit=20&api_key=${KLIPY_API_KEY}`
+            : 'https://api.klipy.co/v2/gifs/trending?limit=20';
+
+        const response = await fetch(url);
+        const data = await response.json();
+        renderGifs(data.data || []);
+    } catch (error) {
+        console.error('Error fetching trending GIFs:', error);
+        klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
+    } finally {
+        klipyResults.classList.remove('loading');
+    }
+}
+
+async function searchKlipyGifs(query) {
+    klipyResults.innerHTML = '';
+    klipyResults.classList.add('loading');
+
+    try {
+        const url = KLIPY_API_KEY
+            ? `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=20&api_key=${KLIPY_API_KEY}`
+            : `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=20`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+        renderGifs(data.data || []);
+    } catch (error) {
+        console.error('Error searching GIFs:', error);
+        klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
+    } finally {
+        klipyResults.classList.remove('loading');
+    }
+}
+
+function renderGifs(gifs) {
+    klipyResults.innerHTML = '';
+
+    if (gifs.length === 0) {
+        klipyResults.innerHTML = '<p class="hint">No GIFs found.</p>';
+        return;
+    }
+
+    gifs.forEach(gifData => {
+        // Klipy typically returns multiple formats. We prefer downsized or original.
+        const imageUrl = gifData.images?.downsized?.url || gifData.images?.original?.url || gifData.url;
+        if (!imageUrl) return;
+
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.classList.add('gif-item');
+        img.loading = 'lazy';
+
+        img.addEventListener('click', () => {
+            sendGifMessage(imageUrl);
+        });
+
+        klipyResults.appendChild(img);
+    });
+}
