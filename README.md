@@ -2,6 +2,8 @@
 
 A truly peer-to-peer secure chat application built with modern web technologies and a lightweight Python backend. 
 
+![Preview](screen.png)
+
 ## Overview
 
 Unlike traditional chat applications (like WhatsApp or Slack) where every message you send goes through a central company server before reaching your friend, this application uses **WebRTC Data Channels** to establish a direct, browser-to-browser connection.
