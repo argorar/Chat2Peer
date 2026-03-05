@@ -496,6 +496,8 @@ input[type="text"]:disabled {
     /* Use a responsive grid with consistent sizing */
     grid-template-columns: repeat(3, 1fr);
     grid-auto-rows: 80px;
+    grid-gap: 10px;
+    /* Fallback for Safari */
     gap: 10px;
     align-content: start;
     /* Smooth scrolling for mobile */
@@ -545,12 +547,16 @@ input[type="text"]:disabled {
 
 .gif-item {
     width: 100%;
-    height: 100%;
+    height: 80px;
+    /* Safari sometimes struggles with 100% height in grid auto-rows */
     object-fit: cover;
     border-radius: 6px;
     cursor: pointer;
     transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
     background-color: rgba(0, 0, 0, 0.3);
+    /* Prevent image dragging to improve click experience */
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .gif-item:hover {

@@ -26,9 +26,15 @@ const configuration = {
     ]
 };
 
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 10000;
+let isIntentionalDisconnect = false;
+
 startBtn.addEventListener('click', () => {
     startBtn.disabled = true;
     startBtn.textContent = 'Connecting to signaling...';
+    isIntentionalDisconnect = false;
+    reconnectAttempts = 0;
     connectSignalingServer();
 });
 
@@ -53,6 +59,7 @@ function connectSignalingServer() {
 
     ws.onopen = () => {
         console.log('Connected to signaling server');
+        reconnectAttempts = 0;
         updateStatus('connecting', 'Waiting for peer...');
         startBtn.textContent = 'Waiting for peer...';
         displaySystemMessage('Connected to signaling server. Waiting for a peer to join...');
@@ -109,11 +116,30 @@ function connectSignalingServer() {
 
     ws.onclose = () => {
         console.log('WebSocket closed');
-        if (peerConnection?.connectionState !== 'connected') {
-            updateStatus('disconnected', 'Disconnected');
-            handleDisconnect();
+        if (!isIntentionalDisconnect) {
+            handleDisconnect(false);
+            attemptReconnection();
+        } else {
+            if (peerConnection?.connectionState !== 'connected') {
+                updateStatus('disconnected', 'Disconnected');
+                handleDisconnect(true);
+            }
         }
     };
+}
+
+function attemptReconnection() {
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+    reconnectAttempts++;
+    updateStatus('connecting', `Reconnecting in ${delay / 1000}s...`);
+    startBtn.textContent = `Reconnecting... (${reconnectAttempts})`;
+
+    setTimeout(() => {
+        if (!isIntentionalDisconnect && (!ws || ws.readyState !== WebSocket.OPEN)) {
+            console.log(`Reconnection attempt ${reconnectAttempts}`);
+            connectSignalingServer();
+        }
+    }, delay);
 }
 
 function initPeerConnection() {
@@ -138,8 +164,14 @@ function initPeerConnection() {
 
         } else if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
             updateStatus('disconnected', 'P2P Disconnected');
-            displaySystemMessage('P2P connection lost.');
-            handleDisconnect();
+            displaySystemMessage('P2P connection lost. Attempting to recover...');
+            handleDisconnect(false);
+            // Si el WS sigue abierto, el backoff del propio WS manejará la reconexión total si ambos caen.
+            // Si solo cayó el P2P, limpiamos el estado P2P y esperamos que un peer de un nuevo Offer vía WS.
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                updateStatus('connecting', 'Waiting for peer...');
+                startBtn.textContent = 'Waiting for peer...';
+            }
         }
     };
 
@@ -193,7 +225,7 @@ function setupDataChannel() {
     };
 }
 
-function handleDisconnect() {
+function handleDisconnect(fullDisconnect = true) {
     if (dataChannel) {
         dataChannel.close();
         dataChannel = null;
@@ -210,8 +242,18 @@ function handleDisconnect() {
     klipyContainer.style.display = 'none';
 
     setupContainer.style.display = 'flex';
-    startBtn.disabled = false;
-    startBtn.textContent = 'Reconnect';
+
+    if (fullDisconnect) {
+        isIntentionalDisconnect = true;
+        if (ws) {
+            ws.close();
+        }
+        startBtn.disabled = false;
+        startBtn.textContent = 'Reconnect';
+    } else {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Reconnecting P2P...';
+    }
 }
 
 function sendMessage() {
@@ -230,7 +272,6 @@ function sendGifMessage(gifUrl) {
         dataChannel.send(JSON.stringify(payload));
         displayUserMessage(gifUrl, 'sent', true);
         klipyContainer.style.display = 'none';
-        klipySearch.value = '';
     }
 }
 
@@ -331,13 +372,21 @@ setupDataChannel = function () {
 // Añade tu API Key de Klipy aquí (de lo contrario, los endpoints públicos funcionarán de forma limitada)
 const KLIPY_API_KEY = 'myMchPMlqDxJKpeSzJfOLCFrTpZqdqCLLF9Uf6RPKjxIPmeqxy6k5EPgo2PFivAI';
 let searchTimeout;
+let currentGifOffset = 0;
+let currentGifQuery = '';
+let isLoadingGifs = false;
+let hasMoreGifs = true;
+const GIF_LIMIT = 20;
 
 // Toggle GIF container
 gifBtn.addEventListener('click', () => {
     if (klipyContainer.style.display === 'none') {
         klipyContainer.style.display = 'flex';
         klipySearch.focus();
-        fetchTrendingGifs();
+        if (klipyResults.children.length === 0) {
+            currentGifQuery = '';
+            fetchTrendingGifs(true);
+        }
     } else {
         klipyContainer.style.display = 'none';
     }
@@ -353,60 +402,108 @@ klipySearch.addEventListener('input', (e) => {
     const query = e.target.value.trim();
 
     if (query.length === 0) {
-        fetchTrendingGifs();
+        currentGifQuery = '';
+        fetchTrendingGifs(true);
         return;
     }
 
     // Klipy API recommends searching after a short delay
     searchTimeout = setTimeout(() => {
-        searchKlipyGifs(query);
+        currentGifQuery = query;
+        searchKlipyGifs(query, true);
     }, 500);
 });
 
-async function fetchTrendingGifs() {
-    klipyResults.innerHTML = '';
-    klipyResults.classList.add('loading');
+// Infinite Scroll for GIF results
+klipyResults.addEventListener('scroll', () => {
+    if (isLoadingGifs || !hasMoreGifs) return;
+
+    // Check if scrolled near the bottom (100px threshold)
+    if (klipyResults.scrollTop + klipyResults.clientHeight >= klipyResults.scrollHeight - 100) {
+        if (currentGifQuery) {
+            searchKlipyGifs(currentGifQuery, false);
+        } else {
+            fetchTrendingGifs(false);
+        }
+    }
+});
+
+async function fetchTrendingGifs(reset = false) {
+    if (reset) {
+        klipyResults.innerHTML = '';
+        klipyResults.classList.add('loading');
+        currentGifOffset = 0;
+        hasMoreGifs = true;
+    }
+
+    if (isLoadingGifs || !hasMoreGifs) return;
+    isLoadingGifs = true;
 
     try {
         const url = KLIPY_API_KEY
-            ? `https://api.klipy.co/v2/gifs/trending?limit=20&api_key=${KLIPY_API_KEY}`
-            : 'https://api.klipy.co/v2/gifs/trending?limit=20';
+            ? `https://api.klipy.co/v2/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}&api_key=${KLIPY_API_KEY}`
+            : `https://api.klipy.co/v2/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
 
         const response = await fetch(url);
         const data = await response.json();
-        renderGifs(data.data || []);
+        const newGifs = data.data || [];
+
+        if (newGifs.length === 0) {
+            hasMoreGifs = false;
+        } else {
+            currentGifOffset += GIF_LIMIT;
+            renderGifs(newGifs, reset);
+        }
     } catch (error) {
         console.error('Error fetching trending GIFs:', error);
-        klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
+        if (reset) klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
     } finally {
-        klipyResults.classList.remove('loading');
+        if (reset) klipyResults.classList.remove('loading');
+        isLoadingGifs = false;
     }
 }
 
-async function searchKlipyGifs(query) {
-    klipyResults.innerHTML = '';
-    klipyResults.classList.add('loading');
+async function searchKlipyGifs(query, reset = false) {
+    if (reset) {
+        klipyResults.innerHTML = '';
+        klipyResults.classList.add('loading');
+        currentGifOffset = 0;
+        hasMoreGifs = true;
+    }
+
+    if (isLoadingGifs || !hasMoreGifs) return;
+    isLoadingGifs = true;
 
     try {
         const url = KLIPY_API_KEY
-            ? `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=20&api_key=${KLIPY_API_KEY}`
-            : `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=20`;
+            ? `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}&api_key=${KLIPY_API_KEY}`
+            : `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
 
         const response = await fetch(url);
         const data = await response.json();
-        renderGifs(data.data || []);
+        const newGifs = data.data || [];
+
+        if (newGifs.length === 0) {
+            hasMoreGifs = false;
+        } else {
+            currentGifOffset += GIF_LIMIT;
+            renderGifs(newGifs, reset);
+        }
     } catch (error) {
         console.error('Error searching GIFs:', error);
-        klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
+        if (reset) klipyResults.innerHTML = '<p class="hint">Failed to load GIFs.</p>';
     } finally {
-        klipyResults.classList.remove('loading');
+        if (reset) klipyResults.classList.remove('loading');
+        isLoadingGifs = false;
     }
 }
 
-function renderGifs(gifs) {
-    klipyResults.innerHTML = '';
+function renderGifs(gifs, reset = false) {
+    if (reset) {
+        klipyResults.innerHTML = '';
+    }
 
-    if (gifs.length === 0) {
+    if (gifs.length === 0 && reset) {
         klipyResults.innerHTML = '<p class="hint">No GIFs found.</p>';
         return;
     }
