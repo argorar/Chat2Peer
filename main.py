@@ -44,6 +44,15 @@ async def websocket_endpoint(websocket: WebSocket):
             # Receive text data (signaling information)
             data = await websocket.receive_text()
             
+            # Intercept pings to keep the connection alive on Render
+            try:
+                parsed = json.loads(data)
+                if parsed.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    continue
+            except Exception:
+                pass
+            
             # Broadcast incoming signaling data to all *other* clients
             for conn in connected_clients:
                 if conn != websocket:
