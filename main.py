@@ -3,9 +3,19 @@ import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI()
+
+# Allow cross-origin requests from Netflix (needed for the Chrome extension)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://www.netflix.com", "https://netflix.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 DIRECTORY = "public"
 
 # Create public directory if it doesn't exist
