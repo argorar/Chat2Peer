@@ -25,6 +25,22 @@ if not os.path.exists(DIRECTORY):
 # Store connected active WebSockets
 connected_clients: set[WebSocket] = set()
 
+import asyncio
+
+# Background task to send application-level pings to keep connections alive
+async def ping_clients():
+    while True:
+        await asyncio.sleep(25)
+        for conn in list(connected_clients):
+            try:
+                await conn.send_json({"type": "ping"})
+            except Exception:
+                pass
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(ping_clients())
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -44,11 +60,11 @@ async def websocket_endpoint(websocket: WebSocket):
             # Receive text data (signaling information)
             data = await websocket.receive_text()
             
-            # Intercept pings to keep the connection alive on Render
             try:
                 parsed = json.loads(data)
-                if parsed.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
+                if parsed.get("type") in ("ping", "pong"):
+                    if parsed.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
                     continue
             except Exception:
                 pass
