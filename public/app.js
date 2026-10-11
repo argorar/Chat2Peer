@@ -441,12 +441,12 @@ async function fetchTrendingGifs(reset = false) {
 
     try {
         const url = KLIPY_API_KEY
-            ? `https://api.klipy.co/v2/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}&api_key=${KLIPY_API_KEY}`
-            : `https://api.klipy.co/v2/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
+            ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`
+            : `https://api.klipy.co/api/v1/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
 
         const response = await fetch(url);
         const data = await response.json();
-        const newGifs = data.data || [];
+        const newGifs = data.data?.data || [];
 
         if (newGifs.length === 0) {
             hasMoreGifs = false;
@@ -476,12 +476,12 @@ async function searchKlipyGifs(query, reset = false) {
 
     try {
         const url = KLIPY_API_KEY
-            ? `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}&api_key=${KLIPY_API_KEY}`
-            : `https://api.klipy.co/v2/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
+            ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`
+            : `https://api.klipy.co/api/v1/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
 
         const response = await fetch(url);
         const data = await response.json();
-        const newGifs = data.data || [];
+        const newGifs = data.data?.data || [];
 
         if (newGifs.length === 0) {
             hasMoreGifs = false;
@@ -510,7 +510,7 @@ function renderGifs(gifs, reset = false) {
 
     gifs.forEach(gifData => {
         // Klipy typically returns multiple formats. We prefer downsized or original.
-        const imageUrl = gifData.images?.downsized?.url || gifData.images?.original?.url || gifData.url;
+        const imageUrl = gifData.file?.sm?.gif?.url || gifData.file?.md?.gif?.url || gifData.images?.downsized?.url || gifData.images?.original?.url || gifData.url;
         if (!imageUrl) return;
 
         const img = document.createElement('img');
