@@ -12,8 +12,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      api.klipy.co
-// @updateURL    https://github.com/argorar/Chat2Peer/raw/master/Chat2Peer-Netflix.user.js
-// @downloadURL  https://github.com/argorar/Chat2Peer/raw/master/Chat2Peer-Netflix.user.js
+// @updateURL    https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
+// @downloadURL  https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
 // @noframes
 // @run-at       document-idle
 // @icon         https://www.netflix.com/favicon.ico
