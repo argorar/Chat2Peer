@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.2.0
+// @version      1.3.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -14,12 +14,14 @@
 // @connect      api.klipy.co
 // @updateURL    https://github.com/argorar/Chat2Peer/raw/master/Chat2Peer-Netflix.user.js
 // @downloadURL  https://github.com/argorar/Chat2Peer/raw/master/Chat2Peer-Netflix.user.js
+// @noframes
 // @run-at       document-idle
 // @icon         https://www.netflix.com/favicon.ico
 // ==/UserScript==
 
 (function () {
   'use strict';
+  if (window.top !== window.self) return;
   if (document.getElementById('c2p-sidebar')) return;
 
   // ── Polyfills for Safari / Basic Extensions ──
@@ -33,12 +35,30 @@
 
   // ── State ──
   let ws = null, peerConnection = null, dataChannel = null, sidebarVisible = false;
-  let serverUrl = getVal('serverUrl', '');
+  let serverUrl = getVal('serverUrl', 'wss://chat2peer.onrender.com/ws');
   let nickname = getVal('nickname', '');
   let reconnectAttempts = 0;
+  let reconnectTimer = null;
+  let autoReconnectTimer = null;
   let isIntentionalDisconnect = false;
+  let isNegotiating = false;
+  let lastOfferReceived = 0;
   const MAX_RECONNECT_DELAY = 10000;
-  const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+  const ICE_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      {
+        urls: [
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turn:openrelay.metered.ca:443?transport=tcp'
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
+    ]
+  };
   const EMOJIS = ['🙈','🥰','😂','😲','😭','🔥','🎉','😘','😍','😎'];
 
   // ── Klipy GIF State ──
@@ -51,6 +71,13 @@
   let syncInterval = null;
   let attachedVideo = null;
   const DRIFT_THRESHOLD = 1500; // 1.5s
+
+  // ── Voice Notes State ──
+  let mediaRecorder = null, audioChunks = [], recordTimerInterval = null, recordStartTime = 0;
+  let incomingAudioChunks = {};
+
+  // ── Typing Indicator State ──
+  let localTypingTimeout = null, isTypingLocally = false, remoteTypingTimeout = null;
 
   // ── Settings ──
   function promptServerUrl() {
@@ -80,6 +107,10 @@
 #c2p-sidebar .c2p-header-title{display:flex;flex-direction:column;gap:2px}
 #c2p-sidebar .c2p-header-title h2{font-size:15px;font-weight:700;background:linear-gradient(135deg,#e50914,#ff6b6b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin:0;padding:0;line-height:1.3}
 #c2p-sidebar .c2p-header-subtitle{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em}
+#c2p-sidebar .c2p-header-btn{background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:4px;border-radius:4px;transition:all .2s;display:flex;align-items:center;justify-content:center}
+#c2p-sidebar .c2p-header-btn:hover{color:#fff;background:rgba(255,255,255,.08)}
+#c2p-sidebar .c2p-header-btn.c2p-spinning{animation:c2p-spin 1s linear infinite;color:#e50914}
+@keyframes c2p-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 #c2p-sidebar .c2p-status-badge{font-size:11px;font-weight:500;padding:4px 10px;border-radius:9999px;display:flex;align-items:center;gap:6px;transition:all .3s;border:1px solid transparent;white-space:nowrap}
 #c2p-sidebar .c2p-status-badge::before{content:'';display:block;width:6px;height:6px;border-radius:50%;flex-shrink:0}
 #c2p-sidebar .c2p-status-badge.c2p-disconnected{background:rgba(239,68,68,.1);color:#ef4444;border-color:rgba(239,68,68,.2)}
@@ -102,9 +133,19 @@
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
-#c2p-sidebar .c2p-msg.c2p-system{align-self:center;background:transparent;color:#666;font-size:11px;box-shadow:none;border:1px dashed rgba(255,255,255,.08);border-radius:10px;padding:6px 12px;max-width:95%;text-align:center}
+#c2p-sidebar .c2p-msg.c2p-system{align-self:center;background:transparent;color:#666;font-size:11px;box-shadow:none;border:1px dashed rgba(255,255,255,.08);border-radius:10px;padding:6px 12px;max-width:95%;text-align:center;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px}
+#c2p-sidebar .c2p-inline-action-btn{background:rgba(229,9,20,.18);color:#ff6b6b;border:1px solid rgba(229,9,20,.35);border-radius:99px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
+#c2p-sidebar .c2p-inline-action-btn:hover{background:rgba(229,9,20,.35);color:#fff;border-color:rgba(229,9,20,.6);transform:scale(1.05)}
 #c2p-sidebar .c2p-msg .c2p-gif-wrap{border-radius:8px;overflow:hidden;display:inline-block;margin-top:4px}
 #c2p-sidebar .c2p-msg .c2p-gif-wrap img{height:120px;width:auto;display:block;border-radius:4px}
+#c2p-sidebar .c2p-typing-indicator{display:flex;align-items:center;gap:6px;padding:4px 16px;font-size:11px;color:#888;min-height:20px;transition:opacity .2s,visibility .2s;flex-shrink:0}
+#c2p-sidebar .c2p-typing-indicator.c2p-hidden{opacity:0;visibility:hidden;pointer-events:none}
+#c2p-sidebar .c2p-typing-dots{display:inline-flex;gap:3px;align-items:center}
+#c2p-sidebar .c2p-typing-dots span{width:4px;height:4px;background:#888;border-radius:50%;animation:c2p-typingBounce 1.4s infinite ease-in-out both}
+#c2p-sidebar .c2p-typing-dots span:nth-child(1){animation-delay:-0.32s}
+#c2p-sidebar .c2p-typing-dots span:nth-child(2){animation-delay:-0.16s}
+#c2p-sidebar .c2p-typing-dots span:nth-child(3){animation-delay:0s}
+@keyframes c2p-typingBounce{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
 #c2p-sidebar .c2p-emoji-bar{display:flex;justify-content:center;gap:4px;padding:8px 12px;background:rgba(30,30,30,.5);border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
 #c2p-sidebar .c2p-emoji-btn{background:transparent;border:none;font-size:18px;cursor:pointer;transition:transform .2s;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;opacity:.5;padding:0}
 #c2p-sidebar .c2p-emoji-btn:not(:disabled){opacity:1}
@@ -123,6 +164,26 @@
 #c2p-sidebar .c2p-gif-btn:active:not(:disabled){transform:scale(.95)}
 #c2p-sidebar .c2p-gif-btn:disabled{opacity:.3;cursor:not-allowed}
 #c2p-sidebar .c2p-gif-btn svg{width:18px;height:18px}
+#c2p-sidebar .c2p-mic-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#e5e5e5;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0;padding:0}
+#c2p-sidebar .c2p-mic-btn:hover:not(:disabled){background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.2);color:#fff;transform:scale(1.05)}
+#c2p-sidebar .c2p-mic-btn:active:not(:disabled){transform:scale(.95)}
+#c2p-sidebar .c2p-mic-btn:disabled{opacity:.3;cursor:not-allowed}
+#c2p-sidebar .c2p-mic-btn svg{width:18px;height:18px}
+#c2p-sidebar .c2p-recording-bar{display:none;align-items:center;gap:10px;flex:1;background:rgba(229,9,20,.12);border:1px solid rgba(229,9,20,.3);border-radius:99px;padding:4px 12px;color:#fff}
+#c2p-sidebar .c2p-record-dot{width:10px;height:10px;background:#e50914;border-radius:50%;animation:c2p-blink 1s infinite;flex-shrink:0}
+#c2p-sidebar .c2p-record-timer{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:#ff6b6b;flex:1}
+#c2p-sidebar .c2p-record-btn{background:none;border:none;cursor:pointer;font-size:14px;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+#c2p-sidebar .c2p-record-cancel{color:#999}
+#c2p-sidebar .c2p-record-cancel:hover{color:#fff;background:rgba(255,255,255,.15)}
+#c2p-sidebar .c2p-record-send{background:#e50914;color:#fff}
+#c2p-sidebar .c2p-record-send:hover{background:#ff1e27;transform:scale(1.1)}
+#c2p-sidebar .c2p-audio-player{display:flex;align-items:center;gap:10px;min-width:180px;padding:2px 0}
+#c2p-sidebar .c2p-audio-btn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;transition:all .2s}
+#c2p-sidebar .c2p-audio-btn:hover{background:rgba(255,255,255,.35);transform:scale(1.08)}
+#c2p-sidebar .c2p-audio-timeline{flex:1;display:flex;flex-direction:column;gap:4px}
+#c2p-sidebar .c2p-audio-progress{width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;appearance:none;-webkit-appearance:none;outline:none;cursor:pointer}
+#c2p-sidebar .c2p-audio-progress::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#fff;cursor:pointer}
+#c2p-sidebar .c2p-audio-duration{font-size:10px;opacity:.8;font-variant-numeric:tabular-nums}
 #c2p-sidebar .c2p-klipy-container{position:absolute;bottom:115px;left:12px;right:12px;height:340px;max-height:calc(100vh - 180px);background:rgba(24,24,24,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.7);display:none;flex-direction:column;z-index:100;overflow:hidden;animation:c2p-scaleIn .2s cubic-bezier(.16,1,.3,1) forwards;transform-origin:bottom right}
 @keyframes c2p-scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 #c2p-sidebar .c2p-klipy-header{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.25)}
@@ -163,8 +224,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           <h2>🎬 Chat2Peer</h2>
           <span class="c2p-header-subtitle">WebRTC P2P · Encrypted</span>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button id="c2p-settings-btn" style="background:none;border:none;color:#666;cursor:pointer;font-size:14px;padding:4px;" title="Settings">⚙️</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button id="c2p-reconnect-btn" class="c2p-header-btn" title="Force Fresh Reconnect">🔄</button>
+          <button id="c2p-settings-btn" class="c2p-header-btn" title="Settings">⚙️</button>
           <div class="c2p-status-badge c2p-disconnected" id="c2p-status">Disconnected</div>
         </div>
       </div>
@@ -175,9 +237,27 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       <div class="c2p-messages" id="c2p-messages">
         <div class="c2p-msg c2p-system">Welcome! Messages are sent securely over WebRTC.</div>
       </div>
+      <div id="c2p-typing-indicator" class="c2p-typing-indicator c2p-hidden">
+        <span>Peer is typing</span>
+        <span class="c2p-typing-dots"><span></span><span></span><span></span></span>
+      </div>
       <div class="c2p-emoji-bar">${EMOJIS.map(e => `<button class="c2p-emoji-btn" data-emoji="${e}" disabled>${e}</button>`).join('')}</div>
       <div class="c2p-input-area">
+        <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
+          <span class="c2p-record-dot"></span>
+          <span class="c2p-record-timer" id="c2p-record-timer">0:00</span>
+          <button id="c2p-record-cancel-btn" class="c2p-record-btn c2p-record-cancel" title="Discard">✕</button>
+          <button id="c2p-record-send-btn" class="c2p-record-btn c2p-record-send" title="Send Voice Note">✓</button>
+        </div>
         <input type="text" id="c2p-msg-input" placeholder="Type a message..." disabled autocomplete="off">
+        <button class="c2p-mic-btn" id="c2p-mic-btn" disabled title="Voice Note">
+          <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
         <button class="c2p-gif-btn" id="c2p-gif-btn" disabled title="Send GIF">
           <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -204,14 +284,28 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
     toggleBtn.addEventListener('click', toggleSidebar);
     document.getElementById('c2p-settings-btn').addEventListener('click', promptServerUrl);
-    document.getElementById('c2p-connect-btn').addEventListener('click', () => {
-      const btn = document.getElementById('c2p-connect-btn');
-      btn.disabled = true; btn.textContent = 'Connecting...';
-      isIntentionalDisconnect = false; reconnectAttempts = 0;
-      connectSignaling();
-    });
+    document.getElementById('c2p-reconnect-btn').addEventListener('click', forceFreshReconnect);
+    document.getElementById('c2p-connect-btn').addEventListener('click', forceFreshReconnect);
     document.getElementById('c2p-send-btn').addEventListener('click', sendMessage);
-    document.getElementById('c2p-msg-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+    // Stop key events from bubbling to Netflix's video player controls
+    ['keydown', 'keyup', 'keypress'].forEach(type => {
+      sidebar.addEventListener(type, e => e.stopPropagation());
+    });
+
+    const msgInput = document.getElementById('c2p-msg-input');
+    msgInput.addEventListener('input', handleLocalTyping);
+    msgInput.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    document.getElementById('c2p-mic-btn').addEventListener('click', startRecording);
+    document.getElementById('c2p-record-cancel-btn').addEventListener('click', cancelRecording);
+    document.getElementById('c2p-record-send-btn').addEventListener('click', finishAndSendRecording);
     sidebar.querySelectorAll('.c2p-emoji-btn').forEach(btn => {
       btn.addEventListener('click', () => sendEmoji(btn.getAttribute('data-emoji')));
     });
@@ -279,6 +373,15 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     document.addEventListener('webkitfullscreenchange', handleFullscreen);
   }
 
+  function focusMsgInput() {
+    if (sidebarVisible) {
+      setTimeout(() => {
+        const inp = document.getElementById('c2p-msg-input');
+        if (inp && !inp.disabled) inp.focus();
+      }, 150);
+    }
+  }
+
   function toggleSidebar() {
     sidebarVisible = !sidebarVisible;
     const sidebar = document.getElementById('c2p-sidebar');
@@ -286,6 +389,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (sidebarVisible) {
       sidebar.classList.remove('c2p-hidden'); btn.classList.add('c2p-sidebar-open');
       btn.innerHTML = '✕'; document.body.classList.add('c2p-sidebar-active');
+      focusMsgInput();
     } else {
       sidebar.classList.add('c2p-hidden'); btn.classList.remove('c2p-sidebar-open');
       btn.innerHTML = '💬'; document.body.classList.remove('c2p-sidebar-active');
@@ -299,6 +403,29 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (b) { b.className = `c2p-status-badge c2p-${state}`; b.textContent = text; }
   }
   function displaySystemMessage(t) { const d = document.createElement('div'); d.classList.add('c2p-msg','c2p-system'); d.textContent = t; appendMsg(d); }
+  function displayActionMessage(text, actionText, actionFn) {
+    const d = document.createElement('div');
+    d.classList.add('c2p-msg', 'c2p-system');
+    const span = document.createElement('span');
+    span.textContent = text;
+    d.appendChild(span);
+    if (actionText && actionFn) {
+      const btn = document.createElement('button');
+      btn.classList.add('c2p-inline-action-btn');
+      btn.textContent = actionText;
+      btn.addEventListener('click', actionFn);
+      d.appendChild(btn);
+    }
+    appendMsg(d);
+  }
+  function showSetupBanner(btnText = '🔄 Reconnect Fresh Session', hintText = 'Click to establish a fresh P2P session.') {
+    const su = document.getElementById('c2p-setup');
+    const btn = document.getElementById('c2p-connect-btn');
+    const hint = document.getElementById('c2p-setup-hint');
+    if (su) su.style.display = 'flex';
+    if (btn) { btn.disabled = false; btn.textContent = btnText; }
+    if (hint) { hint.textContent = hintText; hint.style.color = '#888'; }
+  }
   function displayUserMessage(content, type, isGif = false) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
     if (isGif) { d.style.cssText='background:transparent;padding:0;border:none'; const w=document.createElement('div'); w.classList.add('c2p-gif-wrap'); const i=document.createElement('img'); i.src=content; w.appendChild(i); d.appendChild(w); }
@@ -307,8 +434,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
   function appendMsg(el) { const c = document.getElementById('c2p-messages'); if(c){c.appendChild(el);c.scrollTo({top:c.scrollHeight,behavior:'smooth'});} }
   function setInputEnabled(on) {
-    const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn');
-    if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on;
+    const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn');
+    if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on;
     document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn').forEach(b=>b.disabled=!on);
   }
 
@@ -396,7 +523,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             type: 'sync', action: 'heartbeat',
             time: time, paused: paused
           }));
+        } else {
+          // Keep NAT UDP mapping alive even when paused or between episodes
+          dataChannel.send(JSON.stringify({ type: 'ping' }));
         }
+      }
+      // Keep WebSocket alive through reverse proxies (Cloudflare/Render)
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e){}
       }
     }, 3000);
   }
@@ -440,103 +574,450 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     setTimeout(() => { isApplyingRemoteUpdate = false; }, 500);
   }
 
-  // ── Signaling ──
+  // ── Signaling & Fresh Reconnect ──
+  function scheduleAutoReconnect(reason = 'P2P connection lost') {
+    if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
+    if (isIntentionalDisconnect) return;
+
+    // 2-second delay with slight jitter (0-300ms) to prevent glare/sync loops between the two peers
+    const delay = 2000 + Math.floor(Math.random() * 300);
+    console.log(`[C2P] Scheduling auto-reconnect in ${(delay / 1000).toFixed(1)}s (reason: ${reason})...`);
+    updateStatus('connecting', 'Auto-reconnecting in 2s...');
+    displayActionMessage(`⚠️ ${reason}. Auto-reconnecting in 2s...`, '🔄 Reconnect Now', () => {
+      if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+      forceFreshReconnect();
+    });
+
+    autoReconnectTimer = setTimeout(() => {
+      autoReconnectTimer = null;
+      if (!isIntentionalDisconnect && peerConnection?.connectionState !== 'connected') {
+        console.log('[C2P] Triggering automatic fresh reconnect now...');
+        forceFreshReconnect();
+      }
+    }, delay);
+  }
+
+  async function forceFreshReconnect() {
+    console.log('[C2P] Forcing fresh reconnect...');
+    const recBtn = document.getElementById('c2p-reconnect-btn');
+    if (recBtn) recBtn.classList.add('c2p-spinning');
+
+    if (autoReconnectTimer) {
+      clearTimeout(autoReconnectTimer);
+      autoReconnectTimer = null;
+    }
+
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    // 1. Reset WebRTC cleanly
+    resetWebRTC();
+    reconnectAttempts = 0;
+    isIntentionalDisconnect = false;
+    setInputEnabled(false);
+    const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
+
+    updateStatus('connecting', 'Reconnecting...');
+    displaySystemMessage('🔄 Starting fresh connection session...');
+
+    const btn = document.getElementById('c2p-connect-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Connecting...'; }
+
+    // 2. If signaling WebSocket is already open, reuse it to create a fresh offer!
+    // This avoids closing/re-opening the socket and prevents ghost peer_left race conditions.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      console.log('[C2P] WebSocket already open. Sending fresh offer to peer...');
+      try {
+        initPC();
+        await createOffer();
+      } catch(err) {
+        console.error('[C2P] Error creating fresh offer:', err);
+      }
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      return;
+    }
+
+    // 3. If WebSocket is not open, connect fresh signaling
+    connectSignaling();
+  }
+
   function connectSignaling() {
-    if (!serverUrl) { displaySystemMessage('⚠ No server URL. Right-click Tampermonkey icon → Chat2Peer → Set Server URL'); const b=document.getElementById('c2p-connect-btn'); if(b){b.disabled=false;b.textContent='Enter Lounge';} return; }
-    updateStatus('connecting','Connecting...');
-    try { ws = new WebSocket(serverUrl); } catch(e) { updateStatus('disconnected','Error'); displaySystemMessage('Connection failed. Check server URL.'); const b=document.getElementById('c2p-connect-btn'); if(b){b.disabled=false;b.textContent='Reconnect';} return; }
-    ws.onopen = () => { 
-      reconnectAttempts=0; updateStatus('connecting','Waiting for peer...'); 
-      const b=document.getElementById('c2p-connect-btn'); if(b)b.textContent='Waiting for peer...'; 
-      displaySystemMessage('Connected. Waiting for a peer...'); 
+    if (!serverUrl) {
+      console.warn('[C2P] No server URL configured.');
+      displaySystemMessage('⚠ No server URL. Right-click Tampermonkey icon → Chat2Peer → Set Server URL');
+      showSetupBanner('Enter Lounge', 'Please set the Signaling Server URL first.');
+      const recBtn = document.getElementById('c2p-reconnect-btn');
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      return;
+    }
+    console.log('[C2P] Connecting to signaling server:', serverUrl);
+    updateStatus('connecting', 'Connecting...');
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch(e) {
+      console.error('[C2P] Error creating WebSocket:', e);
+      updateStatus('disconnected', 'Error');
+      displayActionMessage('Connection failed. Check server URL.', '🔄 Retry', forceFreshReconnect);
+      showSetupBanner('🔄 Reconnect Fresh Session', 'Connection failed. Check server URL.');
+      const recBtn = document.getElementById('c2p-reconnect-btn');
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      return;
+    }
+
+    ws.onopen = () => {
+      console.log('[C2P] WebSocket connected successfully');
+      const recBtn = document.getElementById('c2p-reconnect-btn');
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      reconnectAttempts = 0;
+      if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+        updateStatus('connected', 'P2P Connected');
+      } else {
+        updateStatus('connecting', 'Waiting for peer...');
+        const b = document.getElementById('c2p-connect-btn');
+        if (b) b.textContent = 'Waiting for peer...';
+        displaySystemMessage('Connected to server. Waiting for a peer...');
+      }
+      // Announce presence to any peer already waiting in the lounge
+      try {
+        ws.send(JSON.stringify({ type: 'hello' }));
+      } catch(e){}
     };
+
     ws.onmessage = async (event) => {
-      let msg; try{msg=JSON.parse(event.data);}catch{return;}
+      let msg; try { msg = JSON.parse(event.data); } catch { return; }
       try {
         switch(msg.type) {
-          case 'ping': ws.send(JSON.stringify({type: 'pong'})); break;
+          case 'ping': ws.send(JSON.stringify({ type: 'pong' })); break;
           case 'pong': break;
-          case 'peer_joined': displaySystemMessage('Peer detected!'); initPC(); await createOffer(); break;
-          case 'peer_left': 
-            displaySystemMessage('Peer disconnected. Waiting for them to return...'); 
+          case 'hello':
+            console.log('[C2P] Peer announced presence in lounge');
+            if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
+            if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
+              console.log('[C2P] Negotiation/connecting already in progress. Ignoring duplicate hello.');
+              break;
+            }
+            isNegotiating = true;
+            displaySystemMessage('Peer detected! Establishing fresh connection...');
             resetWebRTC();
-            updateStatus('connecting','Waiting for peer...');
+            initPC();
+            await createOffer();
+            setTimeout(() => { isNegotiating = false; }, 3000);
             break;
-          case 'offer': if(!peerConnection)initPC(); await peerConnection.setRemoteDescription(new RTCSessionDescription(msg)); const a=await peerConnection.createAnswer(); await peerConnection.setLocalDescription(a); ws.send(JSON.stringify(peerConnection.localDescription)); break;
-          case 'answer': if(peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(msg)); break;
-          case 'ice-candidate': if(peerConnection&&msg.candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate)); break;
+          case 'peer_joined':
+            console.log('[C2P] Peer joined room');
+            if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
+            if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
+              console.log('[C2P] Negotiation/connecting already in progress. Ignoring duplicate peer_joined.');
+              break;
+            }
+            isNegotiating = true;
+            displaySystemMessage('Peer detected! Establishing fresh connection...');
+            resetWebRTC();
+            initPC();
+            await createOffer();
+            setTimeout(() => { isNegotiating = false; }, 3000);
+            break;
+          case 'peer_left':
+            console.log('[C2P] Peer left signaling room');
+            if (dataChannel?.readyState === 'open') {
+              break;
+            }
+            // Do not reset WebRTC or show error popups on stale ghost disconnects
+            if (peerConnection?.connectionState !== 'connected') {
+              updateStatus('connecting', 'Waiting for peer...');
+              const b = document.getElementById('c2p-connect-btn');
+              if (b) b.textContent = 'Waiting for peer...';
+            }
+            break;
+          case 'offer':
+            console.log('[C2P] Received offer from peer');
+            if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+            const now = Date.now();
+            if (peerConnection && (peerConnection.iceConnectionState === 'checking' || peerConnection.connectionState === 'connecting') && (now - lastOfferReceived < 3000)) {
+              console.log('[C2P] Ignored duplicate rapid offer while ICE is checking.');
+              break;
+            }
+            lastOfferReceived = now;
+            if (peerConnection) {
+              resetWebRTC();
+            }
+            initPC();
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
+            const a = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(a);
+            ws.send(JSON.stringify(peerConnection.localDescription));
+            break;
+          case 'answer':
+            console.log('[C2P] Received answer from peer');
+            if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
+            break;
+          case 'ice-candidate':
+            if (peerConnection && msg.candidate) {
+              try {
+                if (peerConnection.remoteDescription) {
+                  await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                } else {
+                  setTimeout(async () => {
+                    try {
+                      if (peerConnection?.remoteDescription) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                      }
+                    } catch(err){}
+                  }, 500);
+                }
+              } catch(err) {
+                console.warn('[C2P] ICE candidate error:', err);
+              }
+            }
+            break;
         }
-      } catch(e){console.error('[C2P]',e);}
+      } catch(e) { console.error('[C2P]', e); }
     };
-    ws.onerror = () => updateStatus('disconnected','Error');
-    ws.onclose = () => { 
-      // Do NOT destroy WebRTC if the WebSocket drops. Just reconnect quietly.
-      if(!isIntentionalDisconnect){
+
+    ws.onerror = (err) => {
+      console.error('[C2P] WebSocket error:', err);
+      const recBtn = document.getElementById('c2p-reconnect-btn');
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      updateStatus('disconnected', 'Error');
+    };
+
+    ws.onclose = (event) => {
+      console.log('[C2P] WebSocket closed:', event?.code, event?.reason);
+      const recBtn = document.getElementById('c2p-reconnect-btn');
+      if (recBtn) recBtn.classList.remove('c2p-spinning');
+      if (!isIntentionalDisconnect) {
         attemptReconnect();
-      } else if(peerConnection?.connectionState!=='connected') {
-        updateStatus('disconnected','Disconnected');
+      } else if (peerConnection?.connectionState !== 'connected') {
+        updateStatus('disconnected', 'Disconnected');
         handleDisconnect(true);
-      } 
+      }
     };
   }
+
   function attemptReconnect() {
-    const d=Math.min(1000*Math.pow(2,reconnectAttempts),MAX_RECONNECT_DELAY); reconnectAttempts++;
-    updateStatus('connecting',`Reconnecting (${reconnectAttempts})...`);
-    setTimeout(()=>{if(!isIntentionalDisconnect&&(!ws||ws.readyState!==WebSocket.OPEN))connectSignaling();},d);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    const d = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+    reconnectAttempts++;
+    if (peerConnection?.connectionState !== 'connected' || dataChannel?.readyState !== 'open') {
+      updateStatus('connecting', `Reconnecting (${reconnectAttempts})...`);
+    }
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (!isIntentionalDisconnect && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        connectSignaling();
+      }
+    }, d);
   }
 
   // ── WebRTC ──
   function initPC() {
     peerConnection = new RTCPeerConnection(ICE_CONFIG);
-    peerConnection.onicecandidate = e => { if(e.candidate&&ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'ice-candidate',candidate:e.candidate})); };
-    peerConnection.onconnectionstatechange = () => {
-      const s=peerConnection.connectionState;
-      if(s==='connected'){updateStatus('connected','P2P Connected');const su=document.getElementById('c2p-setup');if(su)su.style.display='none';displaySystemMessage('🔒 Secure P2P connection!');setInputEnabled(true);document.getElementById('c2p-msg-input')?.focus();}
-      else if(['disconnected','failed','closed'].includes(s)){
-        updateStatus('disconnected','P2P Lost');
-        displaySystemMessage('P2P lost. Recovering...');
+    peerConnection.onicecandidate = e => {
+      if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      const state = peerConnection.iceConnectionState;
+      console.log('[C2P] ICE Connection State:', state);
+      if (state === 'failed') {
+        updateStatus('disconnected', 'ICE Failed');
+        showSetupBanner('🔄 Reconnect Fresh Session', 'Network route failed. Click to reconnect.');
         resetWebRTC();
-        if(ws&&ws.readyState===WebSocket.OPEN) {
-          // Force a WebSocket reconnect to restart the peer_joined flow cleanly
-          ws.close();
+        if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
+          scheduleAutoReconnect('Network route failed (ICE timeout)');
+        } else {
+          displayActionMessage('⚠️ Network route failed (ICE timeout).', '🔄 Reconnect Now', forceFreshReconnect);
         }
       }
     };
-    peerConnection.ondatachannel = e => { dataChannel=e.channel; setupDC(); };
+
+    peerConnection.onconnectionstatechange = () => {
+      const s = peerConnection.connectionState;
+      console.log('[C2P] PeerConnection State:', s);
+      if (s === 'connected') {
+        if (autoReconnectTimer) {
+          clearTimeout(autoReconnectTimer);
+          autoReconnectTimer = null;
+        }
+        const recBtn = document.getElementById('c2p-reconnect-btn');
+        if (recBtn) recBtn.classList.remove('c2p-spinning');
+        updateStatus('connected', 'P2P Connected');
+        const su = document.getElementById('c2p-setup'); if (su) su.style.display = 'none';
+        displaySystemMessage('🔒 Secure P2P connection!');
+        setInputEnabled(true);
+        focusMsgInput();
+      } else if (['disconnected', 'failed', 'closed'].includes(s)) {
+        const recBtn = document.getElementById('c2p-reconnect-btn');
+        if (recBtn) recBtn.classList.remove('c2p-spinning');
+        updateStatus('disconnected', 'P2P Lost');
+        showSetupBanner('🔄 Reconnect Fresh Session', 'P2P connection lost. Click to reconnect.');
+        resetWebRTC();
+        if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
+          scheduleAutoReconnect('P2P connection lost');
+        } else {
+          displayActionMessage('⚠️ P2P connection lost.', '🔄 Reconnect Now', forceFreshReconnect);
+        }
+      }
+    };
+
+    peerConnection.ondatachannel = e => { dataChannel = e.channel; setupDC(); };
   }
-  async function createOffer() { dataChannel=peerConnection.createDataChannel('chat-channel'); setupDC(); const o=await peerConnection.createOffer(); await peerConnection.setLocalDescription(o); ws.send(JSON.stringify(peerConnection.localDescription)); }
+
+  async function createOffer() {
+    dataChannel = peerConnection.createDataChannel('chat-channel');
+    setupDC();
+    const o = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(o);
+    ws.send(JSON.stringify(peerConnection.localDescription));
+  }
+
   function setupDC() {
-    dataChannel.onopen = () => { setInputEnabled(true); document.getElementById('c2p-msg-input')?.focus(); startSyncLoop(); };
-    dataChannel.onclose = () => { setInputEnabled(false); stopSyncLoop(); };
-    dataChannel.onmessage = event => { 
+    dataChannel.onopen = () => {
+      setInputEnabled(true);
+      focusMsgInput();
+      startSyncLoop();
+    };
+    dataChannel.onclose = () => {
+      setInputEnabled(false);
+      stopSyncLoop();
+    };
+    dataChannel.onmessage = event => {
       try {
         const d = JSON.parse(event.data);
         if (d.type === 'sync') handleSyncMessage(d);
-        else if (d.type === 'text') displayUserMessage(d.content, 'received');
+        else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
+        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received'); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
-        else if (d.type === 'gif') displayUserMessage(d.url, 'received', true);
+        else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true); }
+        else if (d.type === 'audio_chunk') {
+          showRemoteTyping(false);
+          if (!incomingAudioChunks[d.id]) {
+            incomingAudioChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), duration: d.duration };
+          }
+          const item = incomingAudioChunks[d.id];
+          if (!item.chunks[d.index]) {
+            item.chunks[d.index] = d.chunk;
+            item.received++;
+          }
+          if (item.received === item.total) {
+            const fullDataUrl = item.chunks.join('');
+            delete incomingAudioChunks[d.id];
+            displayAudioMessage(fullDataUrl, 'received', item.duration);
+          }
+        }
+        else if (d.type === 'ping') {
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(JSON.stringify({ type: 'pong' }));
+          }
+        }
+        else if (d.type === 'pong') { /* keep-alive confirmed */ }
       } catch {
         displayUserMessage(event.data, 'received');
-      } 
+      }
     };
   }
+
   function resetWebRTC() {
     stopSyncLoop();
-    if(dataChannel){dataChannel.close();dataChannel=null;} 
-    if(peerConnection){peerConnection.close();peerConnection=null;}
-    setInputEnabled(false); 
-    const kc = document.getElementById('c2p-klipy-container'); if(kc)kc.style.display='none';
+    if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
+    if (remoteTypingTimeout) { clearTimeout(remoteTypingTimeout); remoteTypingTimeout = null; }
+    isTypingLocally = false;
+    showRemoteTyping(false);
+    if (mediaRecorder) cancelRecording();
+    if (dataChannel) {
+      try { dataChannel.onclose = null; dataChannel.onerror = null; dataChannel.onmessage = null; dataChannel.close(); } catch(e){}
+      dataChannel = null;
+    }
+    if (peerConnection) {
+      try { peerConnection.onicecandidate = null; peerConnection.onconnectionstatechange = null; peerConnection.oniceconnectionstatechange = null; peerConnection.ondatachannel = null; peerConnection.close(); } catch(e){}
+      peerConnection = null;
+    }
+    setInputEnabled(false);
+    const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
   }
 
-  function handleDisconnect(full=true) {
+  function handleDisconnect(full = true) {
+    if (autoReconnectTimer) {
+      clearTimeout(autoReconnectTimer);
+      autoReconnectTimer = null;
+    }
     resetWebRTC();
-    const su=document.getElementById('c2p-setup'); if(su)su.style.display='flex';
-    if(full){isIntentionalDisconnect=true;if(ws)ws.close();const b=document.getElementById('c2p-connect-btn');if(b){b.disabled=false;b.textContent='Reconnect';}}
-    else{const b=document.getElementById('c2p-connect-btn');if(b){b.disabled=true;b.textContent='Reconnecting...';}}
+    showSetupBanner('🔄 Reconnect Fresh Session', 'Click to reconnect and wait for a peer.');
+    if (full) {
+      isIntentionalDisconnect = true;
+      if (ws) ws.close();
+      const b = document.getElementById('c2p-connect-btn');
+      if (b) { b.disabled = false; b.textContent = '🔄 Reconnect Fresh Session'; }
+    } else {
+      const b = document.getElementById('c2p-connect-btn');
+      if (b) { b.disabled = true; b.textContent = 'Reconnecting...'; }
+    }
+  }
+
+  // ── Typing Indicator Helpers ──
+  function sendTypingStatus(isTyping) {
+    if (dataChannel && dataChannel.readyState === 'open') {
+      try { dataChannel.send(JSON.stringify({ type: 'typing', isTyping })); } catch(e){}
+    }
+  }
+
+  function handleLocalTyping() {
+    const input = document.getElementById('c2p-msg-input');
+    const hasText = input && input.value.trim().length > 0;
+    if (hasText) {
+      if (!isTypingLocally) {
+        isTypingLocally = true;
+        sendTypingStatus(true);
+      }
+      if (localTypingTimeout) clearTimeout(localTypingTimeout);
+      localTypingTimeout = setTimeout(() => {
+        isTypingLocally = false;
+        sendTypingStatus(false);
+        localTypingTimeout = null;
+      }, 2500);
+    } else if (isTypingLocally) {
+      if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
+      isTypingLocally = false;
+      sendTypingStatus(false);
+    }
+  }
+
+  function showRemoteTyping(show) {
+    const indicator = document.getElementById('c2p-typing-indicator');
+    if (remoteTypingTimeout) { clearTimeout(remoteTypingTimeout); remoteTypingTimeout = null; }
+    if (!indicator) return;
+    if (show) {
+      indicator.classList.remove('c2p-hidden');
+      const c = document.getElementById('c2p-messages');
+      if (c) c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
+      remoteTypingTimeout = setTimeout(() => {
+        indicator.classList.add('c2p-hidden');
+        remoteTypingTimeout = null;
+      }, 4000);
+    } else {
+      indicator.classList.add('c2p-hidden');
+    }
   }
 
   // ── Messaging ──
-  function sendMessage() { const i=document.getElementById('c2p-msg-input'); if(!i)return; const t=i.value.trim(); if(t&&dataChannel?.readyState==='open'){dataChannel.send(JSON.stringify({type:'text',content:t}));displayUserMessage(t,'sent');i.value='';} }
+  function sendMessage() {
+    const i = document.getElementById('c2p-msg-input');
+    if (!i) return;
+    const t = i.value.trim();
+    if (t && dataChannel?.readyState === 'open') {
+      if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
+      if (isTypingLocally) { isTypingLocally = false; sendTypingStatus(false); }
+      dataChannel.send(JSON.stringify({ type: 'text', content: t }));
+      displayUserMessage(t, 'sent');
+      i.value = '';
+    }
+  }
   function sendGifMessage(gifUrl) {
     if (gifUrl && dataChannel?.readyState === 'open') {
       dataChannel.send(JSON.stringify({ type: 'gif', url: gifUrl }));
@@ -556,6 +1037,198 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     el.style.animation=`c2p-floatUp ${d}s ease-in-out forwards`; 
     s.appendChild(el); 
     setTimeout(()=>el.remove(),d*1000); 
+  }
+
+  // ── Voice Notes ──
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      displaySystemMessage('⚠️ Microphone API not supported in this browser.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      const mimeType = mimeTypes.find(m => {
+        try { return MediaRecorder.isTypeSupported(m); } catch(e) { return false; }
+      }) || '';
+      mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+      recordStartTime = Date.now();
+      const recBar = document.getElementById('c2p-recording-bar');
+      const timerEl = document.getElementById('c2p-record-timer');
+      const inputEl = document.getElementById('c2p-msg-input');
+      const micBtn = document.getElementById('c2p-mic-btn');
+      const gifBtn = document.getElementById('c2p-gif-btn');
+      const sendBtn = document.getElementById('c2p-send-btn');
+
+      if (recBar) recBar.style.display = 'flex';
+      if (inputEl) inputEl.style.display = 'none';
+      if (micBtn) micBtn.style.display = 'none';
+      if (gifBtn) gifBtn.style.display = 'none';
+      if (sendBtn) sendBtn.style.display = 'none';
+
+      recordTimerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+        const m = Math.floor(elapsed / 60);
+        const s = elapsed % 60;
+        if (timerEl) timerEl.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+      }, 500);
+
+      mediaRecorder.start(200);
+    } catch(err) {
+      console.error('[C2P] Microphone access error:', err);
+      displaySystemMessage('⚠️ Could not access microphone. Please grant permission.');
+      resetRecordingUI();
+    }
+  }
+
+  function resetRecordingUI() {
+    if (recordTimerInterval) { clearInterval(recordTimerInterval); recordTimerInterval = null; }
+    const recBar = document.getElementById('c2p-recording-bar');
+    const timerEl = document.getElementById('c2p-record-timer');
+    const inputEl = document.getElementById('c2p-msg-input');
+    const micBtn = document.getElementById('c2p-mic-btn');
+    const gifBtn = document.getElementById('c2p-gif-btn');
+    const sendBtn = document.getElementById('c2p-send-btn');
+    if (recBar) recBar.style.display = 'none';
+    if (timerEl) timerEl.textContent = '0:00';
+    if (inputEl) inputEl.style.display = '';
+    if (micBtn) micBtn.style.display = '';
+    if (gifBtn) gifBtn.style.display = '';
+    if (sendBtn) sendBtn.style.display = '';
+  }
+
+  function cancelRecording() {
+    resetRecordingUI();
+    if (mediaRecorder) {
+      try {
+        mediaRecorder.onstop = null;
+        mediaRecorder.stop();
+        mediaRecorder.stream?.getTracks().forEach(t => t.stop());
+      } catch(e){}
+      mediaRecorder = null;
+      audioChunks = [];
+    }
+  }
+
+  function finishAndSendRecording() {
+    const duration = Math.max(1, Math.round((Date.now() - recordStartTime) / 1000));
+    resetRecordingUI();
+    if (!mediaRecorder) return;
+    const rec = mediaRecorder;
+    rec.onstop = () => {
+      const mime = rec.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunks, { type: mime });
+      rec.stream?.getTracks().forEach(t => t.stop());
+      mediaRecorder = null;
+      audioChunks = [];
+      if (audioBlob.size > 0) {
+        sendAudioBlob(audioBlob, duration);
+      }
+    };
+    try { rec.stop(); } catch(e){}
+  }
+
+  function sendAudioBlob(blob, duration) {
+    const localUrl = URL.createObjectURL(blob);
+    displayAudioMessage(localUrl, 'sent', duration);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Data = reader.result;
+      const CHUNK_SIZE = 16384;
+      const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+      const audioId = 'aud_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        if (dataChannel?.readyState === 'open') {
+          dataChannel.send(JSON.stringify({
+            type: 'audio_chunk',
+            id: audioId,
+            index: i,
+            total: totalChunks,
+            chunk: chunk,
+            duration: duration
+          }));
+        }
+      }
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function displayAudioMessage(srcUrl, type, duration = 0) {
+    const d = document.createElement('div');
+    d.classList.add('c2p-msg', `c2p-${type}`);
+
+    const player = document.createElement('div');
+    player.classList.add('c2p-audio-player');
+
+    const audio = document.createElement('audio');
+    audio.src = srcUrl;
+    audio.preload = 'metadata';
+
+    const playBtn = document.createElement('button');
+    playBtn.classList.add('c2p-audio-btn');
+    playBtn.innerHTML = '▶';
+    playBtn.title = 'Play';
+
+    const timeline = document.createElement('div');
+    timeline.classList.add('c2p-audio-timeline');
+
+    const progress = document.createElement('input');
+    progress.type = 'range';
+    progress.min = '0';
+    progress.max = '100';
+    progress.value = '0';
+    progress.classList.add('c2p-audio-progress');
+
+    const timeDisplay = document.createElement('span');
+    timeDisplay.classList.add('c2p-audio-duration');
+    const formatTime = (sec) => {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+    timeDisplay.textContent = formatTime(duration);
+
+    playBtn.addEventListener('click', () => {
+      if (audio.paused) {
+        audio.play().catch(e => console.error('[C2P] Play error:', e));
+        playBtn.innerHTML = '⏸';
+      } else {
+        audio.pause();
+        playBtn.innerHTML = '▶';
+      }
+    });
+
+    audio.addEventListener('timeupdate', () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        progress.value = (audio.currentTime / audio.duration) * 100;
+        timeDisplay.textContent = formatTime(audio.currentTime);
+      }
+    });
+
+    audio.addEventListener('ended', () => {
+      playBtn.innerHTML = '▶';
+      progress.value = 0;
+      timeDisplay.textContent = formatTime(audio.duration || duration);
+    });
+
+    progress.addEventListener('input', () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        audio.currentTime = (progress.value / 100) * audio.duration;
+      }
+    });
+
+    timeline.appendChild(progress);
+    timeline.appendChild(timeDisplay);
+    player.appendChild(playBtn);
+    player.appendChild(timeline);
+    d.appendChild(player);
+    appendMsg(d);
   }
 
   // ── Klipy GIFs ──
