@@ -18,23 +18,71 @@ let ws;
 let peerConnection;
 let dataChannel;
 
-// Public STUN servers for NAT Traversal
+// Public STUN and TURN servers for NAT Traversal
 const configuration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:openrelay.metered.ca:80' },
+        {
+            urls: [
+                'turn:openrelay.metered.ca:80',
+                'turn:openrelay.metered.ca:443',
+                'turn:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
     ]
 };
 
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 10000;
 let isIntentionalDisconnect = false;
+let isNegotiating = false;
+let lastOfferReceived = 0;
+let autoReconnectTimer = null;
 
-startBtn.addEventListener('click', () => {
-    startBtn.disabled = true;
-    startBtn.textContent = 'Connecting to signaling...';
+function scheduleAutoReconnect(reason = 'P2P connection lost') {
+    if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
+    if (isIntentionalDisconnect) return;
+
+    const delay = 2000 + Math.floor(Math.random() * 300);
+    console.log(`Scheduling auto-reconnect in ${(delay / 1000).toFixed(1)}s (reason: ${reason})...`);
+    updateStatus('connecting', 'Auto-reconnecting in 2s...');
+    startBtn.textContent = 'Auto-reconnecting in 2s...';
+
+    autoReconnectTimer = setTimeout(async () => {
+        autoReconnectTimer = null;
+        if (!isIntentionalDisconnect && peerConnection?.connectionState !== 'connected') {
+            console.log('Triggering automatic fresh reconnect now...');
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                if (peerConnection) handleDisconnect(false);
+                initPeerConnection();
+                await createOffer();
+            } else {
+                connectSignalingServer();
+            }
+        }
+    }, delay);
+}
+
+startBtn.addEventListener('click', async () => {
+    if (autoReconnectTimer) {
+        clearTimeout(autoReconnectTimer);
+        autoReconnectTimer = null;
+    }
     isIntentionalDisconnect = false;
     reconnectAttempts = 0;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Re-negotiating...';
+        if (peerConnection) handleDisconnect(false);
+        initPeerConnection();
+        await createOffer();
+        return;
+    }
+    startBtn.disabled = true;
+    startBtn.textContent = 'Connecting to signaling...';
     connectSignalingServer();
 });
 
@@ -60,9 +108,16 @@ function connectSignalingServer() {
     ws.onopen = () => {
         console.log('Connected to signaling server');
         reconnectAttempts = 0;
-        updateStatus('connecting', 'Waiting for peer...');
-        startBtn.textContent = 'Waiting for peer...';
-        displaySystemMessage('Connected to signaling server. Waiting for a peer to join...');
+        if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+            updateStatus('connected', 'P2P Connected');
+        } else {
+            updateStatus('connecting', 'Waiting for peer...');
+            startBtn.textContent = 'Waiting for peer...';
+            displaySystemMessage('Connected to signaling server. Waiting for a peer to join...');
+        }
+        try {
+            ws.send(JSON.stringify({ type: 'hello' }));
+        } catch(e){}
     };
 
     ws.onmessage = async (event) => {
@@ -71,21 +126,58 @@ function connectSignalingServer() {
 
         try {
             switch (message.type) {
+                case 'hello':
+                    console.log('Peer announced presence in lounge');
+                    if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+                    if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
+                    if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
+                        console.log('Negotiation/connecting already in progress. Ignoring duplicate hello.');
+                        break;
+                    }
+                    isNegotiating = true;
+                    displaySystemMessage('Peer detected! Negotiating secure connection...');
+                    if (peerConnection) handleDisconnect(false);
+                    initPeerConnection();
+                    await createOffer();
+                    setTimeout(() => { isNegotiating = false; }, 3000);
+                    break;
                 case 'peer_joined':
                     // Another peer joined. If we are already here, we can initiate the WebRTC offer.
                     console.log('Peer joined, initiating connection...');
+                    if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+                    if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
+                    if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
+                        console.log('Negotiation/connecting already in progress. Ignoring duplicate peer_joined.');
+                        break;
+                    }
+                    isNegotiating = true;
                     displaySystemMessage('Peer detected! Negotiating secure connection...');
+                    if (peerConnection) handleDisconnect(false);
                     initPeerConnection();
                     await createOffer();
+                    setTimeout(() => { isNegotiating = false; }, 3000);
                     break;
                 case 'peer_left':
-                    console.log('Peer left');
-                    displaySystemMessage('Peer disconnected from the network.');
-                    handleDisconnect();
+                    console.log('Peer left signaling room');
+                    if (dataChannel?.readyState === 'open') {
+                        break;
+                    }
+                    if (peerConnection?.connectionState !== 'connected') {
+                        updateStatus('connecting', 'Waiting for peer...');
+                        startBtn.textContent = 'Waiting for peer...';
+                    }
                     break;
                 case 'offer':
                     console.log('Received offer');
-                    if (!peerConnection) initPeerConnection();
+                    if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+                    const now = Date.now();
+                    if (peerConnection && (peerConnection.iceConnectionState === 'checking' || peerConnection.connectionState === 'connecting') && (now - lastOfferReceived < 3000)) {
+                        console.log('Ignored duplicate rapid offer while ICE is checking.');
+                        break;
+                    }
+                    lastOfferReceived = now;
+                    if (peerConnection) handleDisconnect(false);
+                    initPeerConnection();
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
                     const answer = await peerConnection.createAnswer();
                     await peerConnection.setLocalDescription(answer);
@@ -117,7 +209,9 @@ function connectSignalingServer() {
     ws.onclose = () => {
         console.log('WebSocket closed');
         if (!isIntentionalDisconnect) {
-            handleDisconnect(false);
+            if (peerConnection?.connectionState !== 'connected' || dataChannel?.readyState !== 'open') {
+                handleDisconnect(false);
+            }
             attemptReconnection();
         } else {
             if (peerConnection?.connectionState !== 'connected') {
@@ -131,8 +225,10 @@ function connectSignalingServer() {
 function attemptReconnection() {
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
     reconnectAttempts++;
-    updateStatus('connecting', `Reconnecting in ${delay / 1000}s...`);
-    startBtn.textContent = `Reconnecting... (${reconnectAttempts})`;
+    if (peerConnection?.connectionState !== 'connected' || dataChannel?.readyState !== 'open') {
+        updateStatus('connecting', `Reconnecting in ${delay / 1000}s...`);
+        startBtn.textContent = `Reconnecting... (${reconnectAttempts})`;
+    }
 
     setTimeout(() => {
         if (!isIntentionalDisconnect && (!ws || ws.readyState !== WebSocket.OPEN)) {
@@ -158,17 +254,21 @@ function initPeerConnection() {
         console.log('WebRTC State:', peerConnection.connectionState);
 
         if (peerConnection.connectionState === 'connected') {
+            if (autoReconnectTimer) {
+                clearTimeout(autoReconnectTimer);
+                autoReconnectTimer = null;
+            }
             updateStatus('connected', 'P2P Connected');
             setupContainer.style.display = 'none'; // Hide setup once connected
             displaySystemMessage('Secure P2P connection established!');
 
         } else if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
             updateStatus('disconnected', 'P2P Disconnected');
-            displaySystemMessage('P2P connection lost. Attempting to recover...');
+            displaySystemMessage('P2P connection lost. Auto-reconnecting in 2s...');
             handleDisconnect(false);
-            // Si el WS sigue abierto, el backoff del propio WS manejará la reconexión total si ambos caen.
-            // Si solo cayó el P2P, limpiamos el estado P2P y esperamos que un peer de un nuevo Offer vía WS.
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
+                scheduleAutoReconnect('P2P connection lost');
+            } else {
                 updateStatus('connecting', 'Waiting for peer...');
                 startBtn.textContent = 'Waiting for peer...';
             }
@@ -217,6 +317,12 @@ function setupDataChannel() {
                 createFloatingEmoji(data.emoji);
             } else if (data.type === 'gif') {
                 displayUserMessage(data.url, 'received', true);
+            } else if (data.type === 'ping') {
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    dataChannel.send(JSON.stringify({ type: 'pong' }));
+                }
+            } else if (data.type === 'pong') {
+                // keep-alive confirmed
             }
         } catch (e) {
             // Fallback for older plaintext messages if any
@@ -226,6 +332,10 @@ function setupDataChannel() {
 }
 
 function handleDisconnect(fullDisconnect = true) {
+    if (fullDisconnect && autoReconnectTimer) {
+        clearTimeout(autoReconnectTimer);
+        autoReconnectTimer = null;
+    }
     if (dataChannel) {
         dataChannel.close();
         dataChannel = null;
