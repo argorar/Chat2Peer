@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.3.0
+// @version      1.4.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -47,16 +47,9 @@
   const ICE_CONFIG = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:openrelay.metered.ca:80' },
-      {
-        urls: [
-          'turn:openrelay.metered.ca:80',
-          'turn:openrelay.metered.ca:443',
-          'turn:openrelay.metered.ca:443?transport=tcp'
-        ],
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-      }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
     ]
   };
   const EMOJIS = ['🙈','🥰','😂','😲','😭','🔥','🎉','😘','😍','😎'];
@@ -67,10 +60,10 @@
   let gifSearchTimeout = null, currentGifOffset = 0, currentGifQuery = '', isLoadingGifs = false, hasMoreGifs = true;
 
   // ── Sync State ──
-  let isApplyingRemoteUpdate = false;
+  let suppressBroadcast = 0;
   let syncInterval = null;
-  let attachedVideo = null;
-  const DRIFT_THRESHOLD = 1500; // 1.5s
+  let lastPlayerState = null;
+  const DRIFT_THRESHOLD = 2500;
 
   // ── Voice Notes State ──
   let mediaRecorder = null, audioChunks = [], recordTimerInterval = null, recordStartTime = 0;
@@ -78,6 +71,18 @@
 
   // ── Typing Indicator State ──
   let localTypingTimeout = null, isTypingLocally = false, remoteTypingTimeout = null;
+
+  // ── Focus & Input Protection State ──
+  let isInputActive = false, userClickedOutside = false;
+  document.addEventListener('mousedown', (e) => {
+    const insideSidebar = e.target && e.target.closest && (e.target.closest('#c2p-sidebar') || e.target.closest('#c2p-toggle-btn'));
+    if (!insideSidebar) {
+      userClickedOutside = true;
+      isInputActive = false;
+    } else {
+      userClickedOutside = false;
+    }
+  }, true);
 
   // ── Settings ──
   function promptServerUrl() {
@@ -290,18 +295,56 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
     // Stop key events from bubbling to Netflix's video player controls
     ['keydown', 'keyup', 'keypress'].forEach(type => {
-      sidebar.addEventListener(type, e => e.stopPropagation());
+      sidebar.addEventListener(type, e => {
+        e.stopPropagation();
+        if (type === 'keydown' && (e.key === 'Enter' || e.keyCode === 13) && e.target === msgInput) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
     });
 
     const msgInput = document.getElementById('c2p-msg-input');
+    msgInput.addEventListener('focus', () => {
+      isInputActive = true;
+      userClickedOutside = false;
+    });
+    msgInput.addEventListener('blur', () => {
+      // Prevent unintended focus loss when Netflix auto-hides controls or attempts focus theft
+      if (isInputActive && !userClickedOutside && sidebarVisible) {
+        requestAnimationFrame(() => {
+          if (isInputActive && !userClickedOutside && sidebarVisible && !msgInput.disabled) {
+            msgInput.focus();
+          }
+        });
+      }
+    });
     msgInput.addEventListener('input', handleLocalTyping);
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         sendMessage();
       }
     });
+
+    // Prevent auxiliary buttons in sidebar from stealing focus from msgInput on click
+    sidebar.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('mousedown', e => {
+        if (document.activeElement === msgInput) {
+          e.preventDefault();
+        }
+      });
+    });
+
+    const inputArea = sidebar.querySelector('.c2p-input-area');
+    if (inputArea) {
+      inputArea.addEventListener('click', e => {
+        if (!e.target.closest('button')) {
+          focusMsgInput();
+        }
+      });
+    }
 
     document.getElementById('c2p-mic-btn').addEventListener('click', startRecording);
     document.getElementById('c2p-record-cancel-btn').addEventListener('click', cancelRecording);
@@ -361,12 +404,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     // Move sidebar inside fullscreen element so it doesn't turn black
     const handleFullscreen = () => {
       const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
-      if (fsElement && fsElement.tagName !== 'VIDEO') {
-        fsElement.appendChild(sidebar);
-        fsElement.appendChild(toggleBtn);
-      } else {
-        document.body.appendChild(sidebar);
-        document.body.appendChild(toggleBtn);
+      const target = (fsElement && fsElement.tagName !== 'VIDEO') ? fsElement : document.body;
+      if (sidebar.parentElement !== target) {
+        const wasFocused = document.activeElement === document.getElementById('c2p-msg-input');
+        target.appendChild(sidebar);
+        target.appendChild(toggleBtn);
+        if (wasFocused) {
+          focusMsgInput();
+        }
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreen);
@@ -375,6 +420,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
   function focusMsgInput() {
     if (sidebarVisible) {
+      isInputActive = true;
+      userClickedOutside = false;
       setTimeout(() => {
         const inp = document.getElementById('c2p-msg-input');
         if (inp && !inp.disabled) inp.focus();
@@ -391,6 +438,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       btn.innerHTML = '✕'; document.body.classList.add('c2p-sidebar-active');
       focusMsgInput();
     } else {
+      isInputActive = false;
       sidebar.classList.add('c2p-hidden'); btn.classList.remove('c2p-sidebar-open');
       btn.innerHTML = '💬'; document.body.classList.remove('c2p-sidebar-active');
       const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
@@ -443,135 +491,192 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function getNetflixPlayer() {
     try {
       const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-      if (!win.netflix) throw new Error("Netflix global object not found");
-      const videoPlayer = win.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-      const sessionIds = videoPlayer.getAllPlayerSessionIds();
-      if (!sessionIds || sessionIds.length === 0) throw new Error("No active player sessions");
-      // Use the last session ID to get the active player (often it's the last one if they recreated it)
-      const sessionId = sessionIds[sessionIds.length - 1];
-      return videoPlayer.getVideoPlayerBySessionId(sessionId);
+      const vp = win?.netflix?.appContext?.state?.playerApp?.getAPI()?.videoPlayer;
+      if (!vp) return null;
+      const sids = vp.getAllPlayerSessionIds() || [];
+      // the active full-screen playback session contains "watch"
+      const sid = sids.find(id => id.includes('watch')) || sids[sids.length - 1];
+      return sid ? vp.getVideoPlayerBySessionId(sid) : null;
     } catch (e) {
-      console.error("[C2P] Error getting Netflix player API:", e.message);
       return null;
     }
   }
 
-  let listenersAttached = false;
-  function attachVideoListeners() {
-    if (listenersAttached) return;
-    listenersAttached = true;
-    document.addEventListener('play', (e) => { if (e.target.tagName === 'VIDEO') onLocalPlay(); }, true);
-    document.addEventListener('playing', (e) => { if (e.target.tagName === 'VIDEO') onLocalPlay(); }, true);
-    document.addEventListener('pause', (e) => { if (e.target.tagName === 'VIDEO') onLocalPause(); }, true);
-    document.addEventListener('seeked', (e) => { if (e.target.tagName === 'VIDEO') onLocalSeek(); }, true);
+  function getPlayer() {
+    const np = getNetflixPlayer();
+    if (np) {
+      return {
+        play: () => np.play(),
+        pause: () => np.pause(),
+        // -100ms offset prevents keyframe boundary decoding freezes
+        seek: (ms) => np.seek(Math.max(0, ms - 100)),
+        getTime: () => (np.getSegmentTime?.() ?? np.getCurrentTime()) || 0,
+        isPaused: () => np.isPaused(),
+        isReady: true
+      };
+    }
+    const v = document.querySelector('video');
+    if (v) {
+      return {
+        play: () => v.play().catch(() => {}),
+        pause: () => v.pause(),
+        seek: (ms) => { v.currentTime = Math.max(0, (ms - 100) / 1000); },
+        getTime: () => (v.currentTime * 1000) || 0,
+        isPaused: () => v.paused,
+        isReady: v.readyState > 0
+      };
+    }
+    return null;
   }
 
-  let lastActionSent = 0;
-  let lastActionType = '';
-
-  function onLocalPlay() {
-    if (isApplyingRemoteUpdate || !dataChannel || dataChannel.readyState !== 'open') return;
-    const now = Date.now();
-    if (lastActionType === 'play' && now - lastActionSent < 1000) return; // Debounce duplicate plays
-    lastActionType = 'play'; lastActionSent = now;
-    
-    const p = getNetflixPlayer();
-    const time = p ? p.getCurrentTime() : (document.querySelector('video')?.currentTime * 1000 || 0);
-    console.log("[C2P] Sending Play", time);
-    displaySystemMessage('▶️ You resumed playback');
-    dataChannel.send(JSON.stringify({ type: 'sync', action: 'play', time: time }));
+  // Synthetic mousemove to wake up Netflix controls & sync rendering
+  function wakeNetflixUI() {
+    const c = document.querySelector('.VideoContainer') || document.querySelector('.watch-video');
+    if (c) {
+      c.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 100, clientY: 100 }));
+    }
   }
 
-  function onLocalPause() {
-    if (isApplyingRemoteUpdate || !dataChannel || dataChannel.readyState !== 'open') return;
-    const now = Date.now();
-    if (lastActionType === 'pause' && now - lastActionSent < 1000) return;
-    lastActionType = 'pause'; lastActionSent = now;
-    
-    const p = getNetflixPlayer();
-    const time = p ? p.getCurrentTime() : (document.querySelector('video')?.currentTime * 1000 || 0);
-    console.log("[C2P] Sending Pause", time);
-    displaySystemMessage('⏸️ You paused playback');
-    dataChannel.send(JSON.stringify({ type: 'sync', action: 'pause', time: time }));
+  let userListenersAttached = false;
+  function attachUserInteractionListeners() {
+    if (userListenersAttached) return;
+    userListenersAttached = true;
+    // detect seeks when mouse scrub finishes or keyboard keys release
+    window.addEventListener('mouseup', () => pollPlayerState(true));
+    window.addEventListener('keyup', (e) => {
+      if (e.target && (e.target.closest?.('#c2p-sidebar') || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      pollPlayerState(true);
+    });
+
+    if (navigator.mediaSession) {
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          const p = getPlayer();
+          if (p) { p.play(); pollPlayerState(true); }
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          const p = getPlayer();
+          if (p) { p.pause(); pollPlayerState(true); }
+        });
+      } catch (e) {}
+    }
   }
 
-  function onLocalSeek() {
-    if (isApplyingRemoteUpdate || !dataChannel || dataChannel.readyState !== 'open') return;
-    const now = Date.now();
-    if (lastActionType === 'seek' && now - lastActionSent < 1000) return;
-    lastActionType = 'seek'; lastActionSent = now;
-    
-    const p = getNetflixPlayer();
-    const time = p ? p.getCurrentTime() : (document.querySelector('video')?.currentTime * 1000 || 0);
-    console.log("[C2P] Sending Seek", time);
-    displaySystemMessage('⏩ You seeked to ' + Math.floor(time/1000) + 's');
-    dataChannel.send(JSON.stringify({ type: 'sync', action: 'seek', time: time }));
+  function broadcastSync(action, time) {
+    if (suppressBroadcast > 0 || !dataChannel || dataChannel.readyState !== 'open') return;
+    dataChannel.send(JSON.stringify({ type: 'sync', action, time }));
+  }
+
+  function pollPlayerState(isUserTriggered = false) {
+    if (suppressBroadcast > 0 || !dataChannel || dataChannel.readyState !== 'open') return;
+    const p = getPlayer();
+    if (!p || !p.isReady) return;
+
+    const time = p.getTime();
+    const paused = p.isPaused();
+
+    if (!lastPlayerState) {
+      lastPlayerState = { paused, time };
+      return;
+    }
+
+    const stateChanged = paused !== lastPlayerState.paused;
+    const timeDelta = Math.abs(time - lastPlayerState.time);
+    // User seeked if time jumped unexpectedly (>2.5s) without normal 1x progression
+    const seeked = isUserTriggered ? (timeDelta > 1500) : (timeDelta > 2500);
+
+    if (seeked) {
+      console.log("[C2P] Detected seek to", Math.floor(time / 1000));
+      displaySystemMessage('⏩ You seeked to ' + Math.floor(time / 1000) + 's');
+      broadcastSync('seek', time);
+    } else if (stateChanged) {
+      if (paused) {
+        console.log("[C2P] Detected pause at", time);
+        displaySystemMessage('⏸️ You paused playback');
+        broadcastSync('pause', time);
+      } else {
+        console.log("[C2P] Detected play at", time);
+        displaySystemMessage('▶️ You resumed playback');
+        broadcastSync('play', time);
+      }
+    }
+
+    lastPlayerState = { paused, time };
   }
 
   function startSyncLoop() {
     if (syncInterval) clearInterval(syncInterval);
+    attachUserInteractionListeners();
+    lastPlayerState = null;
+
+    let tickCount = 0;
+    // 250ms polling loop + 3s heartbeat/keepalive
     syncInterval = setInterval(() => {
-      attachVideoListeners();
-      if (dataChannel && dataChannel.readyState === 'open') {
-        const p = getNetflixPlayer();
-        const video = document.querySelector('video');
-        const time = p ? p.getCurrentTime() : (video ? video.currentTime * 1000 : null);
-        const paused = p ? p.isPaused() : (video ? video.paused : null);
-        
-        if (time !== null) {
-          dataChannel.send(JSON.stringify({
-            type: 'sync', action: 'heartbeat',
-            time: time, paused: paused
-          }));
-        } else {
-          // Keep NAT UDP mapping alive even when paused or between episodes
-          dataChannel.send(JSON.stringify({ type: 'ping' }));
+      pollPlayerState(false);
+      tickCount++;
+
+      // Every 3 seconds (12 ticks of 250ms), send heartbeat to keep sync and UDP NAT alive
+      if (tickCount % 12 === 0) {
+        if (dataChannel && dataChannel.readyState === 'open') {
+          const p = getPlayer();
+          if (p && p.isReady) {
+            dataChannel.send(JSON.stringify({
+              type: 'sync',
+              action: 'heartbeat',
+              time: p.getTime(),
+              paused: p.isPaused()
+            }));
+          } else {
+            dataChannel.send(JSON.stringify({ type: 'ping' }));
+          }
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e){}
         }
       }
-      // Keep WebSocket alive through reverse proxies (Cloudflare/Render)
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e){}
-      }
-    }, 3000);
+    }, 250);
   }
 
   function stopSyncLoop() {
     if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+    lastPlayerState = null;
   }
 
   function handleSyncMessage(d) {
-    let p = getNetflixPlayer();
-    const video = document.querySelector('video');
-    if (!p) {
-      if (!video) return; // Cannot do anything without video
-      console.warn("[C2P] Netflix API not available for receiving sync. Falling back to native video.");
-      p = {
-        seek: (time) => { video.currentTime = time / 1000; },
-        play: () => { video.play(); },
-        pause: () => { video.pause(); },
-        getCurrentTime: () => video.currentTime * 1000,
-        isPaused: () => video.paused
-      };
-    }
-    
-    isApplyingRemoteUpdate = true;
+    const p = getPlayer();
+    if (!p) return;
+
+    suppressBroadcast++;
     try {
       if (d.action === 'play') {
-        p.seek(d.time); p.play(); displaySystemMessage('▶️ Peer resumed playback');
+        p.seek(d.time);
+        p.play();
+        wakeNetflixUI();
+        displaySystemMessage('▶️ Peer resumed playback');
       } else if (d.action === 'pause') {
-        p.seek(d.time); p.pause(); displaySystemMessage('⏸️ Peer paused playback');
+        p.seek(d.time);
+        p.pause();
+        wakeNetflixUI();
+        displaySystemMessage('⏸️ Peer paused playback');
       } else if (d.action === 'seek') {
-        p.seek(d.time); displaySystemMessage('⏩ Peer seeked to ' + Math.floor(d.time/1000) + 's');
+        p.seek(d.time);
+        wakeNetflixUI();
+        displaySystemMessage('⏩ Peer seeked to ' + Math.floor(d.time / 1000) + 's');
       } else if (d.action === 'heartbeat') {
-        const localTime = p.getCurrentTime();
+        const localTime = p.getTime();
         if (!p.isPaused() && !d.paused && Math.abs(localTime - d.time) > DRIFT_THRESHOLD) {
           p.seek(d.time);
+          wakeNetflixUI();
         }
       }
-    } catch(e) {
+      lastPlayerState = { paused: p.isPaused(), time: p.getTime() };
+    } catch (e) {
       console.error("[C2P] Error applying sync:", e);
+    } finally {
+      setTimeout(() => {
+        suppressBroadcast = Math.max(0, suppressBroadcast - 1);
+      }, 500);
     }
-    setTimeout(() => { isApplyingRemoteUpdate = false; }, 500);
   }
 
   // ── Signaling & Fresh Reconnect ──
