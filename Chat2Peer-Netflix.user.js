@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.4.0
+// @version      1.5.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -73,12 +73,12 @@
   let localTypingTimeout = null, isTypingLocally = false, remoteTypingTimeout = null;
 
   // ── Focus & Input Protection State ──
-  let isInputActive = false, userClickedOutside = false;
+  let activeSidebarInput = null, userClickedOutside = false;
   document.addEventListener('mousedown', (e) => {
     const insideSidebar = e.target && e.target.closest && (e.target.closest('#c2p-sidebar') || e.target.closest('#c2p-toggle-btn'));
     if (!insideSidebar) {
       userClickedOutside = true;
-      isInputActive = false;
+      activeSidebarInput = null;
     } else {
       userClickedOutside = false;
     }
@@ -174,6 +174,11 @@
 #c2p-sidebar .c2p-mic-btn:active:not(:disabled){transform:scale(.95)}
 #c2p-sidebar .c2p-mic-btn:disabled{opacity:.3;cursor:not-allowed}
 #c2p-sidebar .c2p-mic-btn svg{width:18px;height:18px}
+#c2p-sidebar .c2p-nudge-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#e5e5e5;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0;padding:0}
+#c2p-sidebar .c2p-nudge-btn:hover:not(:disabled){background:rgba(255,255,255,.14);border-color:rgba(245,158,11,.4);color:#f59e0b;transform:scale(1.05);box-shadow:0 0 10px rgba(245,158,11,.3)}
+#c2p-sidebar .c2p-nudge-btn:active:not(:disabled){transform:scale(.95)}
+#c2p-sidebar .c2p-nudge-btn:disabled{opacity:.3;cursor:not-allowed}
+#c2p-sidebar .c2p-nudge-btn svg{width:18px;height:18px}
 #c2p-sidebar .c2p-recording-bar{display:none;align-items:center;gap:10px;flex:1;background:rgba(229,9,20,.12);border:1px solid rgba(229,9,20,.3);border-radius:99px;padding:4px 12px;color:#fff}
 #c2p-sidebar .c2p-record-dot{width:10px;height:10px;background:#e50914;border-radius:50%;animation:c2p-blink 1s infinite;flex-shrink:0}
 #c2p-sidebar .c2p-record-timer{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:#ff6b6b;flex:1}
@@ -205,8 +210,11 @@
 #c2p-sidebar .c2p-gif-item{width:100%;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;transition:transform .2s,box-shadow .2s;background:rgba(0,0,0,.3);user-select:none;-webkit-user-drag:none}
 #c2p-sidebar .c2p-gif-item:hover{transform:scale(1.05);box-shadow:0 4px 12px rgba(0,0,0,.5);border:1px solid #e50914}
 #c2p-sidebar .c2p-klipy-footer{padding:4px 8px;border-top:1px solid rgba(255,255,255,.06);text-align:center;background:rgba(0,0,0,.3);font-size:10px;color:#666}
-#c2p-sidebar .c2p-floating-emoji{position:absolute;bottom:0;font-size:36px;pointer-events:none;z-index:50;user-select:none;filter:drop-shadow(0 4px 6px rgba(0,0,0,.4));animation-fill-mode:forwards}
-@keyframes c2p-floatUp{0%{transform:translate(0,0) scale(.5) rotate(-5deg);opacity:0}10%{transform:translate(-5px,-10vh) scale(1.3) rotate(5deg);opacity:1}30%{transform:translate(5px,-30vh) scale(1) rotate(-3deg)}50%{transform:translate(-5px,-50vh) scale(1.1) rotate(3deg)}70%{transform:translate(5px,-70vh) scale(.9) rotate(-5deg);opacity:.8}100%{transform:translate(-2px,-90vh) scale(1.1) rotate(5deg);opacity:0}}
+#c2p-sidebar .c2p-floating-emoji{position:absolute;bottom:0;font-size:36px;pointer-events:none;z-index:50;user-select:none;filter:drop-shadow(0 4px 8px rgba(0,0,0,.35));will-change:transform,opacity;animation-fill-mode:forwards}
+@keyframes c2p-floatUp{0%{transform:translate3d(0,0,0) scale(.65);opacity:0}12%{transform:translate3d(-5px,-11vh,0) scale(1.03) rotate(-2deg);opacity:1}35%{transform:translate3d(6px,-32vh,0) scale(1) rotate(2deg);opacity:1}60%{transform:translate3d(-5px,-55vh,0) scale(.99) rotate(-1.5deg);opacity:.95}80%{transform:translate3d(4px,-74vh,0) scale(.97) rotate(1deg);opacity:.75}100%{transform:translate3d(0,-88vh,0) scale(.94) rotate(0deg);opacity:0}}
+@keyframes c2p-floatUpAlt{0%{transform:translate3d(0,0,0) scale(.65);opacity:0}12%{transform:translate3d(5px,-11vh,0) scale(1.03) rotate(2deg);opacity:1}35%{transform:translate3d(-6px,-32vh,0) scale(1) rotate(-2deg);opacity:1}60%{transform:translate3d(5px,-55vh,0) scale(.99) rotate(1.5deg);opacity:.95}80%{transform:translate3d(-4px,-74vh,0) scale(.97) rotate(-1deg);opacity:.75}100%{transform:translate3d(0,-88vh,0) scale(.94) rotate(0deg);opacity:0}}
+#c2p-sidebar.c2p-shaking{animation:c2p-nudge-shake .55s cubic-bezier(.36,.07,.19,.97) both;box-shadow:-8px 0 32px rgba(229,9,20,.6),0 0 24px rgba(229,9,20,.4)}
+@keyframes c2p-nudge-shake{0%,100%{transform:translateX(0) rotate(0deg)}10%{transform:translate(-14px,-8px) rotate(-2deg)}20%{transform:translate(12px,8px) rotate(2deg)}30%{transform:translate(-12px,6px) rotate(-1.5deg)}40%{transform:translate(10px,-6px) rotate(1.5deg)}50%{transform:translate(-8px,4px) rotate(-1deg)}60%{transform:translate(8px,-4px) rotate(1deg)}75%{transform:translate(-5px,2px) rotate(-.5deg)}90%{transform:translate(5px,-2px) rotate(.5deg)}}
 body.c2p-sidebar-active .watch-video,body.c2p-sidebar-active .watch-video--player-view{width:calc(100vw - 360px)!important;max-width:calc(100vw - 360px)!important;transition:width .35s cubic-bezier(.22,1,.36,1)}
 body.c2p-sidebar-active video{width:100%!important;object-fit:contain!important}
 body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw - 360px)!important;max-width:calc(100vw - 360px)!important}
@@ -255,6 +263,15 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           <button id="c2p-record-send-btn" class="c2p-record-btn c2p-record-send" title="Send Voice Note">✓</button>
         </div>
         <input type="text" id="c2p-msg-input" placeholder="Type a message..." disabled autocomplete="off">
+        <button class="c2p-nudge-btn" id="c2p-nudge-btn" disabled title="Enviar zumbido (Nudge)">
+          <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 9a12 12 0 0 1 0 6"></path>
+            <path d="M5 6a16 16 0 0 1 0 12"></path>
+            <path d="M22 9a12 12 0 0 0 0 6"></path>
+            <path d="M19 6a16 16 0 0 0 0 12"></path>
+            <rect x="9" y="4" width="6" height="16" rx="2"></rect>
+          </svg>
+        </button>
         <button class="c2p-mic-btn" id="c2p-mic-btn" disabled title="Voice Note">
           <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -304,21 +321,30 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       });
     });
 
+    function setupInputFocusProtection(inputEl) {
+      if (!inputEl) return;
+      inputEl.addEventListener('focus', () => {
+        activeSidebarInput = inputEl;
+        userClickedOutside = false;
+      });
+      inputEl.addEventListener('blur', () => {
+        if (activeSidebarInput === inputEl && !userClickedOutside && sidebarVisible) {
+          requestAnimationFrame(() => {
+            const currentActive = document.activeElement;
+            // If focus moved to another element inside sidebar (e.g. klipySearch), do not steal focus
+            if (currentActive && currentActive.closest && currentActive.closest('#c2p-sidebar')) {
+              return;
+            }
+            if (activeSidebarInput === inputEl && !userClickedOutside && sidebarVisible && !inputEl.disabled) {
+              inputEl.focus();
+            }
+          });
+        }
+      });
+    }
+
     const msgInput = document.getElementById('c2p-msg-input');
-    msgInput.addEventListener('focus', () => {
-      isInputActive = true;
-      userClickedOutside = false;
-    });
-    msgInput.addEventListener('blur', () => {
-      // Prevent unintended focus loss when Netflix auto-hides controls or attempts focus theft
-      if (isInputActive && !userClickedOutside && sidebarVisible) {
-        requestAnimationFrame(() => {
-          if (isInputActive && !userClickedOutside && sidebarVisible && !msgInput.disabled) {
-            msgInput.focus();
-          }
-        });
-      }
-    });
+    setupInputFocusProtection(msgInput);
     msgInput.addEventListener('input', handleLocalTyping);
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
@@ -326,15 +352,6 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         e.preventDefault();
         sendMessage();
       }
-    });
-
-    // Prevent auxiliary buttons in sidebar from stealing focus from msgInput on click
-    sidebar.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('mousedown', e => {
-        if (document.activeElement === msgInput) {
-          e.preventDefault();
-        }
-      });
     });
 
     const inputArea = sidebar.querySelector('.c2p-input-area');
@@ -346,10 +363,16 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       });
     }
 
+    const nudgeBtn = document.getElementById('c2p-nudge-btn');
+    if (nudgeBtn) {
+      nudgeBtn.addEventListener('mousedown', e => e.preventDefault());
+      nudgeBtn.addEventListener('click', sendNudge);
+    }
     document.getElementById('c2p-mic-btn').addEventListener('click', startRecording);
     document.getElementById('c2p-record-cancel-btn').addEventListener('click', cancelRecording);
     document.getElementById('c2p-record-send-btn').addEventListener('click', finishAndSendRecording);
     sidebar.querySelectorAll('.c2p-emoji-btn').forEach(btn => {
+      btn.addEventListener('mousedown', e => e.preventDefault());
       btn.addEventListener('click', () => sendEmoji(btn.getAttribute('data-emoji')));
     });
 
@@ -359,21 +382,38 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const klipyClose = document.getElementById('c2p-klipy-close');
     const klipyResults = document.getElementById('c2p-klipy-results');
 
+    setupInputFocusProtection(klipySearch);
+
     gifBtn.addEventListener('click', () => {
       if (klipyContainer.style.display === 'none') {
         klipyContainer.style.display = 'flex';
-        klipySearch.focus();
+        activeSidebarInput = klipySearch;
+        setTimeout(() => klipySearch.focus(), 50);
         if (klipyResults.children.length === 0) {
           currentGifQuery = '';
           fetchTrendingGifs(true);
         }
       } else {
         klipyContainer.style.display = 'none';
+        focusMsgInput();
       }
     });
 
     klipyClose.addEventListener('click', () => {
       klipyContainer.style.display = 'none';
+      focusMsgInput();
+    });
+
+    klipySearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.keyCode === 13) {
+        e.preventDefault();
+        clearTimeout(gifSearchTimeout);
+        const query = klipySearch.value.trim();
+        if (query.length > 0) {
+          currentGifQuery = query;
+          searchKlipyGifs(query, true);
+        }
+      }
     });
 
     klipySearch.addEventListener('input', (e) => {
@@ -420,11 +460,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
   function focusMsgInput() {
     if (sidebarVisible) {
-      isInputActive = true;
       userClickedOutside = false;
       setTimeout(() => {
         const inp = document.getElementById('c2p-msg-input');
-        if (inp && !inp.disabled) inp.focus();
+        if (inp && !inp.disabled) {
+          activeSidebarInput = inp;
+          inp.focus();
+        }
       }, 150);
     }
   }
@@ -438,7 +480,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       btn.innerHTML = '✕'; document.body.classList.add('c2p-sidebar-active');
       focusMsgInput();
     } else {
-      isInputActive = false;
+      activeSidebarInput = null;
       sidebar.classList.add('c2p-hidden'); btn.classList.remove('c2p-sidebar-open');
       btn.innerHTML = '💬'; document.body.classList.remove('c2p-sidebar-active');
       const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
@@ -482,8 +524,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
   function appendMsg(el) { const c = document.getElementById('c2p-messages'); if(c){c.appendChild(el);c.scrollTo({top:c.scrollHeight,behavior:'smooth'});} }
   function setInputEnabled(on) {
-    const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn');
-    if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on;
+    const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn'),n=document.getElementById('c2p-nudge-btn');
+    if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on; if(n)n.disabled=!on || nudgeCooldown;
     document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn').forEach(b=>b.disabled=!on);
   }
 
@@ -1000,6 +1042,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received'); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
         else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true); }
+        else if (d.type === 'nudge') { showRemoteTyping(false); handleIncomingNudge(); }
         else if (d.type === 'audio_chunk') {
           showRemoteTyping(false);
           if (!incomingAudioChunks[d.id]) {
@@ -1129,6 +1172,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       displayUserMessage(gifUrl, 'sent', true);
       const kc = document.getElementById('c2p-klipy-container');
       if (kc) kc.style.display = 'none';
+      focusMsgInput();
     }
   }
   function sendEmoji(e) { if(dataChannel?.readyState==='open'){dataChannel.send(JSON.stringify({type:'emoji',emoji:e}));createFloatingEmoji(e);} }
@@ -1137,11 +1181,82 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const el=document.createElement('div'); 
     el.classList.add('c2p-floating-emoji'); el.textContent=e; 
     el.style.left=`${10+Math.random()*80}%`; 
-    // Randomize duration between 4.5s and 6.5s to slow it down
-    const d=4.5+Math.random()*2; 
-    el.style.animation=`c2p-floatUp ${d}s ease-in-out forwards`; 
+    const d=3.4+Math.random()*0.8; 
+    const anim=Math.random()>0.5?'c2p-floatUp':'c2p-floatUpAlt'; 
+    el.style.animation=`${anim} ${d}s linear forwards`; 
     s.appendChild(el); 
     setTimeout(()=>el.remove(),d*1000); 
+  }
+
+  // ── MSN Nudge / Zumbido ──
+  let nudgeCooldown = false;
+  function playNudgeSound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator(), gain1 = ctx.createGain();
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(140, now);
+      osc1.frequency.exponentialRampToValueAtTime(45, now + 0.12);
+      gain1.gain.setValueAtTime(0.25, now);
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+      osc1.connect(gain1); gain1.connect(ctx.destination);
+      osc1.start(now); osc1.stop(now + 0.12);
+
+      const osc2 = ctx.createOscillator(), gain2 = ctx.createGain();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(170, now + 0.14);
+      osc2.frequency.exponentialRampToValueAtTime(40, now + 0.38);
+      gain2.gain.setValueAtTime(0.3, now + 0.14);
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+      osc2.connect(gain2); gain2.connect(ctx.destination);
+      osc2.start(now + 0.14); osc2.stop(now + 0.38);
+
+      setTimeout(() => { try { ctx.close(); } catch(e){} }, 500);
+    } catch(e) {}
+  }
+
+  function triggerNudgeEffect() {
+    const s = document.getElementById('c2p-sidebar');
+    if (s) {
+      s.classList.remove('c2p-shaking');
+      void s.offsetWidth;
+      s.classList.add('c2p-shaking');
+      setTimeout(() => s.classList.remove('c2p-shaking'), 600);
+    }
+    playNudgeSound();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([100, 50, 100, 50, 150]); } catch(e){}
+    }
+  }
+
+  function sendNudge() {
+    if (nudgeCooldown) {
+      displaySystemMessage('⏳ No puedes enviar un zumbido tan seguido.');
+      return;
+    }
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+    dataChannel.send(JSON.stringify({ type: 'nudge' }));
+    triggerNudgeEffect();
+    displaySystemMessage('🔔 Has enviado un zumbido.');
+    nudgeCooldown = true;
+    const b = document.getElementById('c2p-nudge-btn');
+    if (b) { b.disabled = true; b.style.opacity = '0.3'; }
+    setTimeout(() => {
+      nudgeCooldown = false;
+      if (dataChannel?.readyState === 'open' && b) {
+        b.disabled = false;
+        b.style.opacity = '';
+      }
+    }, 5000);
+  }
+
+  function handleIncomingNudge() {
+    if (!sidebarVisible) toggleSidebar();
+    triggerNudgeEffect();
+    displaySystemMessage('💥 ¡Te han enviado un zumbido!');
   }
 
   // ── Voice Notes ──

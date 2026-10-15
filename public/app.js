@@ -7,6 +7,9 @@ const chatMessages = document.getElementById('chat-messages');
 const emojiButtons = document.querySelectorAll('.emoji-btn');
 const chatContainer = document.querySelector('.chat-container');
 
+// Nudge Element
+const nudgeBtn = document.getElementById('nudge-btn');
+
 // Klipy Elements
 const gifBtn = document.getElementById('gif-btn');
 const klipyContainer = document.getElementById('klipy-container');
@@ -22,16 +25,9 @@ let dataChannel;
 const configuration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:openrelay.metered.ca:80' },
-        {
-            urls: [
-                'turn:openrelay.metered.ca:80',
-                'turn:openrelay.metered.ca:443',
-                'turn:openrelay.metered.ca:443?transport=tcp'
-            ],
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 };
 
@@ -298,6 +294,7 @@ function setupDataChannel() {
         console.log('Data channel open');
         messageInput.disabled = false;
         sendBtn.disabled = false;
+        if (nudgeBtn) nudgeBtn.disabled = nudgeCooldown;
         messageInput.focus();
     };
 
@@ -305,6 +302,7 @@ function setupDataChannel() {
         console.log('Data channel closed');
         messageInput.disabled = true;
         sendBtn.disabled = true;
+        if (nudgeBtn) nudgeBtn.disabled = true;
         setEmojiButtonsDisabled(true);
     };
 
@@ -317,6 +315,8 @@ function setupDataChannel() {
                 createFloatingEmoji(data.emoji);
             } else if (data.type === 'gif') {
                 displayUserMessage(data.url, 'received', true);
+            } else if (data.type === 'nudge') {
+                handleIncomingNudge();
             } else if (data.type === 'ping') {
                 if (dataChannel && dataChannel.readyState === 'open') {
                     dataChannel.send(JSON.stringify({ type: 'pong' }));
@@ -348,6 +348,7 @@ function handleDisconnect(fullDisconnect = true) {
     messageInput.disabled = true;
     sendBtn.disabled = true;
     gifBtn.disabled = true;
+    if (nudgeBtn) nudgeBtn.disabled = true;
     setEmojiButtonsDisabled(true);
     klipyContainer.style.display = 'none';
 
@@ -454,9 +455,10 @@ function createFloatingEmoji(emojiChar) {
     const randomLeft = 10 + Math.random() * 80;
     emojiEl.style.left = `${randomLeft}%`;
 
-    // Add jitter to animation duration
-    const randomDuration = 2.5 + Math.random();
-    emojiEl.style.animationDuration = `${randomDuration}s`;
+    // Smooth continuous duration and natural alternating sway
+    const randomDuration = 3.4 + Math.random() * 0.8;
+    const animName = Math.random() > 0.5 ? 'floatUp' : 'floatUpAlt';
+    emojiEl.style.animation = `${animName} ${randomDuration}s linear forwards`;
 
     chatContainer.appendChild(emojiEl);
 
@@ -474,6 +476,7 @@ setupDataChannel = function () {
         dataChannel.addEventListener('open', () => {
             setEmojiButtonsDisabled(false);
             gifBtn.disabled = false;
+            if (nudgeBtn) nudgeBtn.disabled = nudgeCooldown;
         });
     }
 };
@@ -634,4 +637,83 @@ function renderGifs(gifs, reset = false) {
 
         klipyResults.appendChild(img);
     });
+}
+
+/* --- MSN Nudge / Zumbido Implementation --- */
+let nudgeCooldown = false;
+
+function playNudgeSound() {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+
+        const osc1 = ctx.createOscillator(), gain1 = ctx.createGain();
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(140, now);
+        osc1.frequency.exponentialRampToValueAtTime(45, now + 0.12);
+        gain1.gain.setValueAtTime(0.25, now);
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+        osc1.connect(gain1); gain1.connect(ctx.destination);
+        osc1.start(now); osc1.stop(now + 0.12);
+
+        const osc2 = ctx.createOscillator(), gain2 = ctx.createGain();
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(170, now + 0.14);
+        osc2.frequency.exponentialRampToValueAtTime(40, now + 0.38);
+        gain2.gain.setValueAtTime(0.3, now + 0.14);
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+        osc2.connect(gain2); gain2.connect(ctx.destination);
+        osc2.start(now + 0.14); osc2.stop(now + 0.38);
+
+        setTimeout(() => { try { ctx.close(); } catch (e) {} }, 500);
+    } catch (e) {}
+}
+
+function triggerNudgeEffect() {
+    if (chatContainer) {
+        chatContainer.classList.remove('shaking');
+        void chatContainer.offsetWidth;
+        chatContainer.classList.add('shaking');
+        setTimeout(() => chatContainer.classList.remove('shaking'), 600);
+    }
+    playNudgeSound();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([100, 50, 100, 50, 150]); } catch (e) {}
+    }
+}
+
+function sendNudge() {
+    if (nudgeCooldown) {
+        displaySystemMessage('⏳ No puedes enviar un zumbido tan seguido.');
+        return;
+    }
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+
+    dataChannel.send(JSON.stringify({ type: 'nudge' }));
+    triggerNudgeEffect();
+    displaySystemMessage('🔔 Has enviado un zumbido.');
+
+    nudgeCooldown = true;
+    if (nudgeBtn) {
+        nudgeBtn.disabled = true;
+        nudgeBtn.style.opacity = '0.3';
+    }
+    setTimeout(() => {
+        nudgeCooldown = false;
+        if (dataChannel?.readyState === 'open' && nudgeBtn) {
+            nudgeBtn.disabled = false;
+            nudgeBtn.style.opacity = '';
+        }
+    }, 5000);
+}
+
+function handleIncomingNudge() {
+    triggerNudgeEffect();
+    displaySystemMessage('💥 ¡Te han enviado un zumbido!');
+}
+
+if (nudgeBtn) {
+    nudgeBtn.addEventListener('click', sendNudge);
 }

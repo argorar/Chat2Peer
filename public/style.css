@@ -81,6 +81,23 @@ body {
     margin: 0 20px;
 }
 
+.chat-container.shaking {
+    animation: nudge-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.5), 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes nudge-shake {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    10% { transform: translate(-14px, -8px) rotate(-2deg); }
+    20% { transform: translate(12px, 8px) rotate(2deg); }
+    30% { transform: translate(-12px, 6px) rotate(-1.5deg); }
+    40% { transform: translate(10px, -6px) rotate(1.5deg); }
+    50% { transform: translate(-8px, 4px) rotate(-1deg); }
+    60% { transform: translate(8px, -4px) rotate(1deg); }
+    75% { transform: translate(-5px, 2px) rotate(-0.5deg); }
+    90% { transform: translate(5px, -2px) rotate(0.5deg); }
+}
+
 .chat-header {
     padding: 24px 32px;
     background-color: rgba(15, 23, 42, 0.4);
@@ -334,6 +351,12 @@ input[type="text"]:disabled {
     padding: 8px 20px;
 }
 
+#nudge-btn:hover:not(:disabled) {
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+
 .btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
@@ -405,26 +428,71 @@ input[type="text"]:disabled {
     /* Don't intercept clicks */
     z-index: 50;
     user-select: none;
-    animation: floatUp 3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+    will-change: transform, opacity;
+    animation: floatUp 3.6s linear forwards;
 }
 
 @keyframes floatUp {
     0% {
-        transform: translateY(0) scale(0.5);
+        transform: translate3d(0, 0, 0) scale(0.65);
         opacity: 0;
     }
 
-    10% {
-        transform: translateY(-20px) scale(1.2);
+    12% {
+        transform: translate3d(-5px, -9vh, 0) scale(1.03) rotate(-2deg);
         opacity: 1;
     }
 
-    90% {
-        opacity: 0.8;
+    35% {
+        transform: translate3d(6px, -27vh, 0) scale(1) rotate(2deg);
+        opacity: 1;
+    }
+
+    60% {
+        transform: translate3d(-5px, -46vh, 0) scale(0.99) rotate(-1.5deg);
+        opacity: 0.95;
+    }
+
+    80% {
+        transform: translate3d(4px, -62vh, 0) scale(0.97) rotate(1deg);
+        opacity: 0.75;
     }
 
     100% {
-        transform: translateY(-80vh) scale(1);
+        transform: translate3d(0, -75vh, 0) scale(0.94) rotate(0deg);
+        opacity: 0;
+    }
+}
+
+@keyframes floatUpAlt {
+    0% {
+        transform: translate3d(0, 0, 0) scale(0.65);
+        opacity: 0;
+    }
+
+    12% {
+        transform: translate3d(5px, -9vh, 0) scale(1.03) rotate(2deg);
+        opacity: 1;
+    }
+
+    35% {
+        transform: translate3d(-6px, -27vh, 0) scale(1) rotate(-2deg);
+        opacity: 1;
+    }
+
+    60% {
+        transform: translate3d(5px, -46vh, 0) scale(0.99) rotate(1.5deg);
+        opacity: 0.95;
+    }
+
+    80% {
+        transform: translate3d(-4px, -62vh, 0) scale(0.97) rotate(-1deg);
+        opacity: 0.75;
+    }
+
+    100% {
+        transform: translate3d(0, -75vh, 0) scale(0.94) rotate(0deg);
         opacity: 0;
     }
 }
