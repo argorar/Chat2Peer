@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.5.1
+// @version      1.6.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -12,6 +12,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      api.klipy.co
+// @connect      cdn.pixabay.com
 // @updateURL    https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
 // @downloadURL  https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
 // @noframes
@@ -53,6 +54,13 @@
     ]
   };
   const EMOJIS = ['🙈','🥰','😂','😲','😭','🔥','🎉','😘','😍','😎'];
+  const SOUND_EFFECTS = [
+    { icon: '💥', name: 'Hit', url: 'https://cdn.pixabay.com/audio/2024/07/30/audio_c52f210792.mp3' },
+    { icon: '🎺', name: 'Aplausos', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_2e80fe767c.mp3' },
+    { icon: '🥁', name: 'Redoble', url: 'https://cdn.pixabay.com/audio/2025/05/01/audio_7be5cc9c12.mp3' },
+    { icon: '🤣', name: 'Risas', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_6b3f80310f.mp3' },
+    { icon: '👏', name: 'Corneta', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b80daabd57.mp3' }
+  ];
 
   // ── Klipy GIF State ──
   const KLIPY_API_KEY = 'myMchPMlqDxJKpeSzJfOLCFrTpZqdqCLLF9Uf6RPKjxIPmeqxy6k5EPgo2PFivAI';
@@ -151,11 +159,13 @@
 #c2p-sidebar .c2p-typing-dots span:nth-child(2){animation-delay:-0.16s}
 #c2p-sidebar .c2p-typing-dots span:nth-child(3){animation-delay:0s}
 @keyframes c2p-typingBounce{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
-#c2p-sidebar .c2p-emoji-bar{display:flex;justify-content:center;gap:4px;padding:8px 12px;background:rgba(30,30,30,.5);border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
-#c2p-sidebar .c2p-emoji-btn{background:transparent;border:none;font-size:18px;cursor:pointer;transition:transform .2s;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;opacity:.5;padding:0}
-#c2p-sidebar .c2p-emoji-btn:not(:disabled){opacity:1}
-#c2p-sidebar .c2p-emoji-btn:hover:not(:disabled){transform:scale(1.3);background:rgba(255,255,255,.08)}
-#c2p-sidebar .c2p-emoji-btn:active:not(:disabled){transform:scale(.85)}
+#c2p-sidebar .c2p-sfx-bar,#c2p-sidebar .c2p-emoji-bar{display:flex;justify-content:center;gap:4px;padding:4px 12px;background:rgba(30,30,30,.5);flex-shrink:0}
+#c2p-sidebar .c2p-sfx-bar{border-top:1px solid rgba(255,255,255,.04);padding-bottom:2px}
+#c2p-sidebar .c2p-emoji-bar{padding-top:2px}
+#c2p-sidebar .c2p-emoji-btn,#c2p-sidebar .c2p-sfx-btn{background:transparent;border:none;font-size:18px;cursor:pointer;transition:transform .2s;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;opacity:.5;padding:0}
+#c2p-sidebar .c2p-emoji-btn:not(:disabled),#c2p-sidebar .c2p-sfx-btn:not(:disabled){opacity:1}
+#c2p-sidebar .c2p-emoji-btn:hover:not(:disabled),#c2p-sidebar .c2p-sfx-btn:hover:not(:disabled){transform:scale(1.3);background:rgba(255,255,255,.08)}
+#c2p-sidebar .c2p-emoji-btn:active:not(:disabled),#c2p-sidebar .c2p-sfx-btn:active:not(:disabled){transform:scale(.85)}
 #c2p-sidebar .c2p-input-area{padding:12px 16px;background:rgba(25,25,25,.8);border-top:1px solid rgba(255,255,255,.06);display:flex;gap:8px;align-items:center;flex-shrink:0}
 #c2p-sidebar .c2p-input-area input[type="text"]{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:99px;padding:10px 16px;color:#e5e5e5;font-size:13px;outline:none;transition:all .2s;font-family:inherit}
 #c2p-sidebar .c2p-input-area input[type="text"]:focus{border-color:rgba(229,9,20,.5);background:rgba(255,255,255,.1);box-shadow:0 0 0 3px rgba(229,9,20,.08)}
@@ -254,6 +264,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         <span>Peer is typing</span>
         <span class="c2p-typing-dots"><span></span><span></span><span></span></span>
       </div>
+      <div class="c2p-sfx-bar">${SOUND_EFFECTS.map((s, i) => `<button class="c2p-sfx-btn" data-sfx="${i}" title="${s.name}" disabled>${s.icon}</button>`).join('')}</div>
       <div class="c2p-emoji-bar">${EMOJIS.map(e => `<button class="c2p-emoji-btn" data-emoji="${e}" disabled>${e}</button>`).join('')}</div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
@@ -374,6 +385,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     sidebar.querySelectorAll('.c2p-emoji-btn').forEach(btn => {
       btn.addEventListener('mousedown', e => e.preventDefault());
       btn.addEventListener('click', () => sendEmoji(btn.getAttribute('data-emoji')));
+    });
+    sidebar.querySelectorAll('.c2p-sfx-btn').forEach(btn => {
+      btn.addEventListener('mousedown', e => e.preventDefault());
+      btn.addEventListener('click', () => sendSoundEffect(parseInt(btn.getAttribute('data-sfx'), 10)));
     });
 
     const gifBtn = document.getElementById('c2p-gif-btn');
@@ -526,7 +541,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function setInputEnabled(on) {
     const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn'),n=document.getElementById('c2p-nudge-btn');
     if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on; if(n)n.disabled=!on || nudgeCooldown;
-    document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn').forEach(b=>b.disabled=!on);
+    document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn, #c2p-sidebar .c2p-sfx-btn').forEach(b=>b.disabled=!on);
   }
 
   // ── Sync & Netflix Player ──
@@ -1041,6 +1056,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
         else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received'); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
+        else if (d.type === 'sfx') {
+          playSoundEffect(d.idx);
+          const s = SOUND_EFFECTS[d.idx];
+          if (s) displaySystemMessage(`🔊 ${s.icon} ${s.name}`);
+        }
         else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true); }
         else if (d.type === 'nudge') { showRemoteTyping(false); handleIncomingNudge(); }
         else if (d.type === 'audio_chunk') {
@@ -1186,6 +1206,20 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     el.style.animation=`${anim} ${d}s linear forwards`; 
     s.appendChild(el); 
     setTimeout(()=>el.remove(),d*1000); 
+  }
+  function playSoundEffect(idx) {
+    const s = SOUND_EFFECTS[idx];
+    if (!s) return;
+    try { new Audio(s.url).play().catch(() => {}); } catch {}
+  }
+  function sendSoundEffect(idx) {
+    const s = SOUND_EFFECTS[idx];
+    if (!s) return;
+    playSoundEffect(idx);
+    displaySystemMessage(`🔊 ${s.icon} ${s.name}`);
+    if (dataChannel?.readyState === 'open') {
+      dataChannel.send(JSON.stringify({ type: 'sfx', idx }));
+    }
   }
 
   // ── MSN Nudge / Zumbido ──
