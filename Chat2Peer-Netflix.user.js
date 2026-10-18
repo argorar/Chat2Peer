@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.6.1
+// @version      1.6.2
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -13,8 +13,8 @@
 // @grant        unsafeWindow
 // @connect      api.klipy.co
 // @connect      cdn.pixabay.com
-// @updateURL    https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
-// @downloadURL  https://raw.githubusercontent.com/argorar/Chat2Peer/refs/heads/main/Chat2Peer-Netflix.user.js
+// @updateURL    https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js
+// @downloadURL  https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js
 // @noframes
 // @run-at       document-idle
 // @icon         https://www.netflix.com/favicon.ico
@@ -55,14 +55,14 @@
   };
   const EMOJIS = ['🙈','🥰','😂','😲','😭','🔥','🎉','😘','😍','😎'];
   const SOUND_EFFECTS = [
-    { icon: '💥', name: 'Fart', url: 'https://cdn.pixabay.com/audio/2024/07/30/audio_c52f210792.mp3' },
-    { icon: '🎺', name: 'Aplausos', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_2e80fe767c.mp3' },
-    { icon: '🥁', name: 'The Fart', url: 'https://cdn.pixabay.com/audio/2025/05/01/audio_7be5cc9c12.mp3' },
-    { icon: '😂', name: 'Laught', url: 'https://cdn.pixabay.com/audio/2023/05/11/audio_3f41bc76a6.mp3' },
-    { icon: '😈', name: 'Evil laught', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_6b3f80310f.mp3' },
-    { icon: '👏', name: 'Claps', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b80daabd57.mp3' },
-    { icon: '🍑', name: 'Slap', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_367e863251.mp3' },
-    { icon: '😴', name: 'Snoring', url: 'https://cdn.pixabay.com/audio/2025/05/06/audio_47fc2577b3.mp3' }
+    { svg: '<path d="M2 10h2M6 6v8M10 3v14M14 7v6M18 9v2M22 10h-2"/>', name: 'Fart', url: 'https://cdn.pixabay.com/audio/2024/07/30/audio_c52f210792.mp3' },
+    { svg: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>', name: 'Kiss', url: 'https://cdn.pixabay.com/audio/2025/02/05/audio_3a6957e546.mp3' },
+    { svg: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>', name: 'Long fart', url: 'https://cdn.pixabay.com/audio/2025/05/01/audio_7be5cc9c12.mp3' },
+    { svg: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>', name: 'Laugh', url: 'https://cdn.pixabay.com/audio/2023/05/11/audio_3f41bc76a6.mp3' },
+    { svg: '<circle cx="12" cy="12" r="10"/><path d="M16 16s-1.5-2-4-2-4 2-4 2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/><path d="M7 6l2 2M17 6l-2 2"/>', name: 'Evil', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_6b3f80310f.mp3' },
+    { svg: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>', name: 'Claps', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b80daabd57.mp3' },
+    { svg: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', name: 'Slap', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_367e863251.mp3' },
+    { svg: '<path d="M3 6h5l-5 5h5M12 11h5l-5 5h5M17 17h4l-4 4h4"/>', name: 'Snore', url: 'https://cdn.pixabay.com/audio/2025/05/06/audio_47fc2577b3.mp3' }
   ];
 
   // ── Klipy GIF State ──
@@ -165,13 +165,18 @@
 #c2p-sidebar .c2p-typing-dots span:nth-child(2){animation-delay:-0.16s}
 #c2p-sidebar .c2p-typing-dots span:nth-child(3){animation-delay:0s}
 @keyframes c2p-typingBounce{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
-#c2p-sidebar .c2p-sfx-bar,#c2p-sidebar .c2p-emoji-bar{display:flex;justify-content:center;gap:4px;padding:4px 12px;background:rgba(30,30,30,.5);flex-shrink:0}
-#c2p-sidebar .c2p-sfx-bar{border-top:1px solid rgba(255,255,255,.04);padding-bottom:2px}
-#c2p-sidebar .c2p-emoji-bar{padding-top:2px}
-#c2p-sidebar .c2p-emoji-btn,#c2p-sidebar .c2p-sfx-btn{background:transparent;border:none;font-size:18px;cursor:pointer;transition:transform .2s;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;opacity:.5;padding:0}
-#c2p-sidebar .c2p-emoji-btn:not(:disabled),#c2p-sidebar .c2p-sfx-btn:not(:disabled){opacity:1}
-#c2p-sidebar .c2p-emoji-btn:hover:not(:disabled),#c2p-sidebar .c2p-sfx-btn:hover:not(:disabled){transform:scale(1.3);background:rgba(255,255,255,.08)}
-#c2p-sidebar .c2p-emoji-btn:active:not(:disabled),#c2p-sidebar .c2p-sfx-btn:active:not(:disabled){transform:scale(.85)}
+#c2p-sidebar .c2p-emoji-bar{display:flex;justify-content:center;gap:4px;padding:2px 12px 4px;background:rgba(30,30,30,.5);flex-shrink:0}
+#c2p-sidebar .c2p-emoji-btn{background:transparent;border:none;font-size:18px;cursor:pointer;transition:transform .2s;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;opacity:.5;padding:0}
+#c2p-sidebar .c2p-emoji-btn:not(:disabled){opacity:1}
+#c2p-sidebar .c2p-emoji-btn:hover:not(:disabled){transform:scale(1.3);background:rgba(255,255,255,.08)}
+#c2p-sidebar .c2p-emoji-btn:active:not(:disabled){transform:scale(.85)}
+#c2p-sidebar .c2p-sfx-bar{display:flex;justify-content:center;gap:5px;padding:6px 10px;background:rgba(20,20,20,.6);border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+#c2p-sidebar .c2p-sfx-btn{width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#aaa;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0;opacity:.5;padding:0}
+#c2p-sidebar .c2p-sfx-btn:not(:disabled){opacity:1}
+#c2p-sidebar .c2p-sfx-btn:hover:not(:disabled){background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2);transform:scale(1.08)}
+#c2p-sidebar .c2p-sfx-btn:active:not(:disabled){transform:scale(.92)}
+#c2p-sidebar .c2p-sfx-btn svg{width:18px;height:18px;stroke:currentColor;stroke-width:2;fill:none}
+#c2p-sidebar .c2p-sfx-btn.c2p-sfx-active{background:rgba(229,9,20,.2)!important;border-color:#e50914!important;color:#fff!important;box-shadow:0 0 10px rgba(229,9,20,.85),inset 0 0 6px rgba(229,9,20,.35)!important;transform:scale(1.05)}
 #c2p-sidebar .c2p-input-area{padding:12px 16px;background:rgba(25,25,25,.8);border-top:1px solid rgba(255,255,255,.06);display:flex;gap:8px;align-items:center;flex-shrink:0}
 #c2p-sidebar .c2p-input-area input[type="text"]{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:99px;padding:10px 16px;color:#e5e5e5;font-size:13px;outline:none;transition:all .2s;font-family:inherit}
 #c2p-sidebar .c2p-input-area input[type="text"]:focus{border-color:rgba(229,9,20,.5);background:rgba(255,255,255,.1);box-shadow:0 0 0 3px rgba(229,9,20,.08)}
@@ -287,7 +292,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         <span>Peer is typing</span>
         <span class="c2p-typing-dots"><span></span><span></span><span></span></span>
       </div>
-      <div class="c2p-sfx-bar">${SOUND_EFFECTS.map((s, i) => `<button class="c2p-sfx-btn" data-sfx="${i}" title="${s.name}" disabled>${s.icon}</button>`).join('')}</div>
+      <div class="c2p-sfx-bar">${SOUND_EFFECTS.map((s, i) => `<button class="c2p-sfx-btn" data-sfx="${i}" title="${s.name}" disabled><svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${s.svg}</svg></button>`).join('')}</div>
       <div class="c2p-emoji-bar">${EMOJIS.map(e => `<button class="c2p-emoji-btn" data-emoji="${e}" disabled>${e}</button>`).join('')}</div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
@@ -1281,6 +1286,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const s = SOUND_EFFECTS[idx];
     if (!s) return;
     playSoundEffect(idx);
+    const btn = document.querySelector(`#c2p-sidebar .c2p-sfx-btn[data-sfx="${idx}"]`);
+    if (btn) {
+      btn.classList.add('c2p-sfx-active');
+      setTimeout(() => btn.classList.remove('c2p-sfx-active'), 1200);
+    }
     displaySystemMessage(s.name, 'audio');
     if (dataChannel?.readyState === 'open') {
       dataChannel.send(JSON.stringify({ type: 'sfx', idx }));
