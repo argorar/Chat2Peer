@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.6.2
+// @version      1.7.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -42,6 +42,7 @@
   let reconnectTimer = null;
   let autoReconnectTimer = null;
   let isIntentionalDisconnect = false;
+  let isPeerDisconnected = false;
   let isNegotiating = false;
   let lastOfferReceived = 0;
   const MAX_RECONNECT_DELAY = 10000;
@@ -74,6 +75,7 @@
   let suppressBroadcast = 0;
   let syncInterval = null;
   let lastPlayerState = null;
+  let currentVideoId = null;
   const DRIFT_THRESHOLD = 2500;
 
   // ── Voice Notes State ──
@@ -129,9 +131,14 @@
 #c2p-sidebar .c2p-header-btn.c2p-spinning{animation:c2p-spin 1s linear infinite;color:#e50914}
 #c2p-sidebar .c2p-header-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;display:block}
 @keyframes c2p-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-#c2p-sidebar .c2p-status-badge{font-size:11px;font-weight:500;padding:4px 10px;border-radius:9999px;display:flex;align-items:center;gap:6px;transition:all .3s;border:1px solid transparent;white-space:nowrap}
+#c2p-sidebar .c2p-status-badge{font-size:11px;font-weight:500;padding:4px 10px;border-radius:9999px;display:flex;align-items:center;gap:6px;transition:all .3s;border:1px solid transparent;white-space:nowrap;cursor:pointer;user-select:none}
+#c2p-sidebar .c2p-status-badge:hover{filter:brightness(1.2)}
+#c2p-sidebar .c2p-status-popover{position:absolute;top:calc(100% + 8px);right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.7);z-index:100;white-space:nowrap}
+#c2p-sidebar .c2p-btn-disconnect-popover{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;transition:all .2s}
+#c2p-sidebar .c2p-btn-disconnect-popover:hover{background:rgba(239,68,68,.35);color:#fff;border-color:rgba(239,68,68,.6)}
 #c2p-sidebar .c2p-status-badge::before{content:'';display:block;width:6px;height:6px;border-radius:50%;flex-shrink:0}
-#c2p-sidebar .c2p-status-badge.c2p-disconnected{background:rgba(239,68,68,.1);color:#ef4444;border-color:rgba(239,68,68,.2)}
+#c2p-sidebar .c2p-status-badge.c2p-disconnected{background:rgba(239,68,68,.1);color:#ef4444;border-color:rgba(239,68,68,.2);cursor:default}
+#c2p-sidebar .c2p-status-badge.c2p-disconnected:hover{filter:none}
 #c2p-sidebar .c2p-status-badge.c2p-disconnected::before{background:#ef4444}
 #c2p-sidebar .c2p-status-badge.c2p-connecting{background:rgba(245,158,11,.1);color:#f59e0b;border-color:rgba(245,158,11,.2)}
 #c2p-sidebar .c2p-status-badge.c2p-connecting::before{background:#f59e0b;animation:c2p-blink 1.5s infinite}
@@ -275,10 +282,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             <span class="c2p-header-subtitle">Encrypted</span>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;position:relative;">
           <button id="c2p-reconnect-btn" class="c2p-header-btn" title="Force Fresh Reconnect"><svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
           <button id="c2p-settings-btn" class="c2p-header-btn" title="Settings"><svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
-          <div class="c2p-status-badge c2p-disconnected" id="c2p-status">Disconnected</div>
+          <div class="c2p-status-badge c2p-disconnected" id="c2p-status" title="Estado de conexión (clic para opciones)">Disconnected</div>
+          <div id="c2p-status-popover" class="c2p-status-popover">
+            <button id="c2p-disconnect-action-btn" class="c2p-btn-disconnect-popover">✕ Disconnect</button>
+          </div>
         </div>
       </div>
       <div class="c2p-setup" id="c2p-setup">
@@ -302,7 +312,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           <button id="c2p-record-send-btn" class="c2p-record-btn c2p-record-send" title="Send Voice Note">✓</button>
         </div>
         <input type="text" id="c2p-msg-input" placeholder="Type a message..." disabled autocomplete="off">
-        <button class="c2p-nudge-btn" id="c2p-nudge-btn" disabled title="Enviar zumbido (Nudge)">
+        <button class="c2p-nudge-btn" id="c2p-nudge-btn" disabled title="Send buzz">
           <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 9a12 12 0 0 1 0 6"></path>
             <path d="M5 6a16 16 0 0 1 0 12"></path>
@@ -343,12 +353,39 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       </div>`;
     document.body.appendChild(sidebar);
 
-    toggleBtn.addEventListener('click', toggleSidebar);
-    document.getElementById('c2p-close-btn').addEventListener('click', toggleSidebar);
+    toggleBtn.addEventListener('click', () => toggleSidebar());
+    document.getElementById('c2p-close-btn').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('c2p-settings-btn').addEventListener('click', promptServerUrl);
     document.getElementById('c2p-reconnect-btn').addEventListener('click', forceFreshReconnect);
     document.getElementById('c2p-connect-btn').addEventListener('click', forceFreshReconnect);
     document.getElementById('c2p-send-btn').addEventListener('click', sendMessage);
+
+    const statusEl = document.getElementById('c2p-status');
+    const statusPopover = document.getElementById('c2p-status-popover');
+    const disconnectActionBtn = document.getElementById('c2p-disconnect-action-btn');
+
+    if (statusEl && statusPopover) {
+      statusEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (statusEl.classList.contains('c2p-disconnected')) {
+          statusPopover.style.display = 'none';
+          return;
+        }
+        statusPopover.style.display = statusPopover.style.display === 'block' ? 'none' : 'block';
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest?.('#c2p-status') && !e.target.closest?.('#c2p-status-popover')) {
+          statusPopover.style.display = 'none';
+        }
+      });
+    }
+
+    if (disconnectActionBtn) {
+      disconnectActionBtn.addEventListener('click', () => {
+        if (statusPopover) statusPopover.style.display = 'none';
+        terminateConnection();
+      });
+    }
 
     // Stop key events from bubbling to Netflix's video player controls
     ['keydown', 'keyup', 'keypress'].forEach(type => {
@@ -531,21 +568,28 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     }
   }
 
-  function toggleSidebar() {
-    sidebarVisible = !sidebarVisible;
+  function toggleSidebar(forceOpen = null, persist = true) {
+    sidebarVisible = typeof forceOpen === 'boolean' ? forceOpen : !sidebarVisible;
     const sidebar = document.getElementById('c2p-sidebar');
     const btn = document.getElementById('c2p-toggle-btn');
+    if (!sidebar || !btn) return;
     if (sidebarVisible) {
       sidebar.classList.remove('c2p-hidden'); btn.classList.add('c2p-sidebar-open');
       document.body.classList.add('c2p-sidebar-active');
       focusMsgInput();
       scrollToBottom();
       setTimeout(scrollToBottom, 60);
+      if (persist) {
+        try { sessionStorage.setItem('c2p_sidebar_open', '1'); } catch(e){}
+      }
     } else {
       activeSidebarInput = null;
       sidebar.classList.add('c2p-hidden'); btn.classList.remove('c2p-sidebar-open');
       document.body.classList.remove('c2p-sidebar-active');
       const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
+      if (persist) {
+        try { sessionStorage.removeItem('c2p_sidebar_open'); } catch(e){}
+      }
     }
   }
 
@@ -553,6 +597,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function updateStatus(state, text) {
     const b = document.getElementById('c2p-status');
     if (b) { b.className = `c2p-status-badge c2p-${state}`; b.textContent = text; }
+    if (state === 'disconnected') {
+      const p = document.getElementById('c2p-status-popover');
+      if (p) p.style.display = 'none';
+    }
   }
   const SYSTEM_ICONS = {
     clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
@@ -616,14 +664,34 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   // ── Sync & Netflix Player ──
+  function isWatchPage() {
+    return window.location.pathname.startsWith('/watch');
+  }
+
+  function syncSidebarWithRoute() {
+    if (!isWatchPage()) {
+      // Home / Browse: never open automatically
+      if (sidebarVisible) toggleSidebar(false, false);
+    } else {
+      // Watch page: remember if user opened or closed the chat
+      const wasOpen = sessionStorage.getItem('c2p_sidebar_open') === '1';
+      if (wasOpen && !sidebarVisible) {
+        toggleSidebar(true, false);
+      } else if (!wasOpen && sidebarVisible) {
+        toggleSidebar(false, false);
+      }
+    }
+  }
+
   function getNetflixPlayer() {
+    if (!isWatchPage()) return null;
     try {
       const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
       const vp = win?.netflix?.appContext?.state?.playerApp?.getAPI()?.videoPlayer;
       if (!vp) return null;
       const sids = vp.getAllPlayerSessionIds() || [];
       // the active full-screen playback session contains "watch"
-      const sid = sids.find(id => id.includes('watch')) || sids[sids.length - 1];
+      const sid = sids.find(id => id.includes('watch'));
       return sid ? vp.getVideoPlayerBySessionId(sid) : null;
     } catch (e) {
       return null;
@@ -631,6 +699,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   function getPlayer() {
+    if (!isWatchPage()) return null;
     const np = getNetflixPlayer();
     if (np) {
       return {
@@ -643,7 +712,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         isReady: true
       };
     }
-    const v = document.querySelector('video');
+    const v = document.querySelector('.watch-video video') || (isWatchPage() ? document.querySelector('video') : null);
     if (v) {
       return {
         play: () => v.play().catch(() => {}),
@@ -659,19 +728,229 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
   // Synthetic mousemove to wake up Netflix controls & sync rendering
   function wakeNetflixUI() {
+    if (!isWatchPage()) return;
     const c = document.querySelector('.VideoContainer') || document.querySelector('.watch-video');
     if (c) {
       c.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 100, clientY: 100 }));
     }
   }
 
+  // Teleparty-inspired video ID extraction from URL or DOM container
+  function getVideoId() {
+    if (!isWatchPage()) return null;
+    const m = window.location.pathname.match(/\/watch\/([0-9]+)/);
+    if (m) return m[1];
+    const domId = document.querySelector('.watch-video video')?.parentElement?.id;
+    return (domId && /^[0-9]+$/.test(domId)) ? domId : null;
+  }
+
+  // Teleparty-inspired Main World bridge: invokes React Fiber API directly in Netflix's page realm without reload
+  (function injectMainWorldBridge() {
+    try {
+      if (document.getElementById('c2p-bridge')) return;
+      const script = document.createElement('script');
+      script.id = 'c2p-bridge';
+      script.textContent = `(${function() {
+        window.__c2p_getEpisodeData = function() {
+          try {
+            var root = document.querySelector('.watch-video');
+            if (root) {
+              var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
+              if (fiberKey) {
+                var node = root[fiberKey];
+                for (var i = 0; i < 8 && node; i++) {
+                  var meta = node.stateNode?.state?.activeVideoMetadata;
+                  if (meta) {
+                    return {
+                      seq: meta._video?.seq,
+                      title: meta._video?.title,
+                      seasonSeq: meta._season?._season?.seq
+                    };
+                  }
+                  node = node.return;
+                }
+              }
+            }
+          } catch(e) {}
+          return null;
+        };
+
+        window.addEventListener('message', function(e) {
+          if (!e.data || e.data.type !== 'C2P_NAVIGATE_EPISODE') return;
+          var targetId = parseInt(e.data.videoId, 10);
+          try {
+            var root = document.querySelector('.watch-video');
+            if (root) {
+              var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
+              if (fiberKey) {
+                var node = root[fiberKey];
+                for (var i = 0; i < 8 && node; i++) {
+                  var api = node.stateNode;
+                  if (api && typeof api.handleSelectorEpisodePlay === 'function') {
+                    console.log('[C2P Bridge] In-page episode change via React Fiber:', targetId);
+                    api.handleSelectorEpisodePlay({ stopPropagation: function() {} }, targetId);
+                    return;
+                  }
+                  node = node.return;
+                }
+              }
+            }
+          } catch(err) {
+            console.warn('[C2P Bridge] React Fiber episode change failed:', err);
+          }
+        });
+      }})();`;
+      (document.head || document.documentElement).appendChild(script);
+    } catch(e) {
+      console.warn('[C2P] Could not inject main world bridge:', e);
+    }
+  })();
+
+  // Extract human-readable episode label (e.g. "Episode 1" or "Episode 1: Title")
+  function getEpisodeLabel(vid = null) {
+    try {
+      // 1. Try Main-World bridge React Fiber metadata
+      const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      const data = typeof win.__c2p_getEpisodeData === 'function' ? win.__c2p_getEpisodeData() : null;
+      if (data && data.seq) {
+        return data.title ? `Episode ${data.seq}: ${data.title}` : `Episode ${data.seq}`;
+      }
+
+      // 2. Try Netflix UI title container [data-uia="video-title"]
+      const titleEl = document.querySelector('[data-uia="video-title"]');
+      if (titleEl) {
+        const spans = Array.from(titleEl.querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
+        const epSpan = spans.find(t => /^(S\d+:E\d+|T\d+:E\d+|Ep\w*\.?\s*\d+)/i.test(t));
+        if (epSpan) {
+          const numMatch = epSpan.match(/E(\d+)/i) || epSpan.match(/(\d+)/);
+          const epNum = numMatch ? numMatch[1] : null;
+          const titleSpan = spans.find(t => t !== epSpan);
+          if (epNum) return titleSpan ? `Episode ${epNum}: ${titleSpan}` : `Episode ${epNum}`;
+          return titleSpan ? `${epSpan}: ${titleSpan}` : epSpan;
+        }
+        if (spans.length > 0) return spans.join(' - ');
+      }
+
+      // 3. Try document.title (e.g. "Show - Season 1: Episode 1")
+      const m = document.title.match(/(?:Season\s*\d+[:\s]+)?(?:Episode|Episodio|Cap[ií]tulo)\s*(\d+)/i)
+        || document.title.match(/(?:S\d+[:\s]*E|T\d+[:\s]*E)(\d+)/i);
+      if (m && m[1]) return `Episode ${m[1]}`;
+
+      // 4. Try matching DOM episode link for vid
+      if (vid) {
+        const link = document.querySelector(`a[href*="/watch/${vid}"]`);
+        if (link?.textContent.trim()) {
+          const lm = link.textContent.trim().match(/^(\d+)\.\s*(.*)/);
+          return lm ? `Episode ${lm[1]}${lm[2] ? ': ' + lm[2] : ''}` : link.textContent.trim();
+        }
+      }
+    } catch (e) {}
+    return vid ? `Episode ${vid}` : 'Episode';
+  }
+
+  // Teleparty-inspired episode changer (Main-World React Fiber -> DOM links -> SPA fallback)
+  function changeEpisode(videoId) {
+    if (!videoId) return;
+    const targetId = String(videoId);
+    if (getVideoId() === targetId) return;
+
+    suppressBroadcast++;
+
+    // 1. Direct unsafeWindow React Fiber attempt
+    try {
+      const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      const root = (win.document || document).querySelector('.watch-video');
+      if (root) {
+        const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber'));
+        if (fiberKey) {
+          let node = root[fiberKey];
+          for (let i = 0; i < 8 && node; i++) {
+            const api = node.stateNode;
+            if (api && typeof api.handleSelectorEpisodePlay === 'function') {
+              console.log("[C2P] Switching episode via direct React Fiber:", targetId);
+              api.handleSelectorEpisodePlay({ stopPropagation: () => {} }, parseInt(targetId, 10));
+              setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 2000);
+              return;
+            }
+            node = node.return;
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. PostMessage to Main-World bridge (unproxied React realm)
+    window.postMessage({ type: 'C2P_NAVIGATE_EPISODE', videoId: targetId }, '*');
+
+    // 3. DOM episode selector link
+    const epLink = document.querySelector(`a[href*="/watch/${targetId}"]`);
+    if (epLink) {
+      console.log("[C2P] Clicking episode link in DOM:", targetId);
+      epLink.click();
+      setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 2000);
+      return;
+    }
+
+    // 4. Next episode button in DOM
+    const nextBtn = document.querySelector('[data-uia="next-episode-seamless-button"], [data-uia="control-next"], .button-nfplayerNextEpisode');
+    if (nextBtn) {
+      console.log("[C2P] Clicking next episode button in DOM");
+      nextBtn.click();
+      setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 2000);
+      return;
+    }
+
+    // 5. Fallback navigation with session persistence if in-page switch does not apply
+    setTimeout(() => {
+      if (getVideoId() !== targetId) {
+        console.log("[C2P] Fallback navigating with persistence to /watch/" + targetId);
+        try {
+          sessionStorage.setItem('c2p_session_active', '1');
+          if (sidebarVisible) {
+            sessionStorage.setItem('c2p_sidebar_open', '1');
+          } else {
+            sessionStorage.removeItem('c2p_sidebar_open');
+          }
+        } catch(e) {}
+        window.location.assign(`/watch/${targetId}`);
+      }
+      suppressBroadcast = Math.max(0, suppressBroadcast - 1);
+    }, 1000);
+  }
+
+  // Teleparty-inspired history hook to immediately catch SPA navigation
+  (function hookHistory() {
+    const origPush = history.pushState;
+    history.pushState = function() {
+      const res = origPush.apply(this, arguments);
+      setTimeout(() => {
+        syncSidebarWithRoute();
+        pollPlayerState(true);
+      }, 100);
+      return res;
+    };
+    const origReplace = history.replaceState;
+    history.replaceState = function() {
+      const res = origReplace.apply(this, arguments);
+      setTimeout(() => {
+        syncSidebarWithRoute();
+        pollPlayerState(true);
+      }, 100);
+      return res;
+    };
+    window.addEventListener('popstate', () => setTimeout(() => {
+      syncSidebarWithRoute();
+      pollPlayerState(true);
+    }, 100));
+  })();
+
   let userListenersAttached = false;
   function attachUserInteractionListeners() {
     if (userListenersAttached) return;
     userListenersAttached = true;
     // detect seeks when mouse scrub finishes or keyboard keys release
-    window.addEventListener('mouseup', () => pollPlayerState(true));
+    window.addEventListener('mouseup', () => { if (isWatchPage()) pollPlayerState(true); });
     window.addEventListener('keyup', (e) => {
+      if (!isWatchPage()) return;
       if (e.target && (e.target.closest?.('#c2p-sidebar') || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       pollPlayerState(true);
     });
@@ -679,10 +958,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (navigator.mediaSession) {
       try {
         navigator.mediaSession.setActionHandler('play', () => {
+          if (!isWatchPage()) return;
           const p = getPlayer();
           if (p) { p.play(); pollPlayerState(true); }
         });
         navigator.mediaSession.setActionHandler('pause', () => {
+          if (!isWatchPage()) return;
           const p = getPlayer();
           if (p) { p.pause(); pollPlayerState(true); }
         });
@@ -690,13 +971,37 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     }
   }
 
-  function broadcastSync(action, time) {
+  function broadcastSync(action, time, videoId = null, episodeLabel = null) {
     if (suppressBroadcast > 0 || !dataChannel || dataChannel.readyState !== 'open') return;
-    dataChannel.send(JSON.stringify({ type: 'sync', action, time }));
+    const msg = { type: 'sync', action, time };
+    if (videoId) msg.videoId = videoId;
+    if (episodeLabel) msg.episodeLabel = episodeLabel;
+    dataChannel.send(JSON.stringify(msg));
   }
 
   function pollPlayerState(isUserTriggered = false) {
+    if (!isWatchPage()) {
+      currentVideoId = null;
+      lastPlayerState = null;
+      return;
+    }
     if (suppressBroadcast > 0 || !dataChannel || dataChannel.readyState !== 'open') return;
+
+    // Detect episode change in series
+    const vid = getVideoId();
+    if (vid) {
+      if (currentVideoId && vid !== currentVideoId) {
+        console.log("[C2P] Detected episode change to", vid);
+        currentVideoId = vid;
+        lastPlayerState = null;
+        const label = getEpisodeLabel(vid);
+        displaySystemMessage('You switched to ' + label, 'refresh');
+        broadcastSync('episode', 0, vid, label);
+        return;
+      }
+      currentVideoId = vid;
+    }
+
     const p = getPlayer();
     if (!p || !p.isReady) return;
 
@@ -736,11 +1041,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (syncInterval) clearInterval(syncInterval);
     attachUserInteractionListeners();
     lastPlayerState = null;
+    currentVideoId = getVideoId();
 
     let tickCount = 0;
     // 250ms polling loop + 3s heartbeat/keepalive
     syncInterval = setInterval(() => {
-      pollPlayerState(false);
+      if (isWatchPage()) pollPlayerState(false);
       tickCount++;
 
       // Every 3 seconds (12 ticks of 250ms), send heartbeat to keep sync and UDP NAT alive
@@ -752,7 +1058,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
               type: 'sync',
               action: 'heartbeat',
               time: p.getTime(),
-              paused: p.isPaused()
+              paused: p.isPaused(),
+              videoId: currentVideoId || getVideoId()
             }));
           } else {
             dataChannel.send(JSON.stringify({ type: 'ping' }));
@@ -771,6 +1078,18 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   function handleSyncMessage(d) {
+    if (d.action === 'episode') {
+      const targetId = String(d.videoId);
+      if (targetId && getVideoId() !== targetId) {
+        const label = d.episodeLabel || getEpisodeLabel(targetId);
+        displaySystemMessage('Peer switched to ' + label, 'refresh');
+        currentVideoId = targetId;
+        lastPlayerState = null;
+        changeEpisode(targetId);
+      }
+      return;
+    }
+
     const p = getPlayer();
     if (!p) return;
 
@@ -791,6 +1110,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         wakeNetflixUI();
         displaySystemMessage('Peer seeked to ' + Math.floor(d.time / 1000) + 's', 'seek');
       } else if (d.action === 'heartbeat') {
+        if (d.videoId && getVideoId() && String(d.videoId) !== getVideoId()) {
+          console.log("[C2P] Reconciling episode from heartbeat:", d.videoId);
+          displaySystemMessage('Reconciling episode with peer...', 'refresh');
+          changeEpisode(d.videoId);
+          return;
+        }
         const localTime = p.getTime();
         if (!p.isPaused() && !d.paused && Math.abs(localTime - d.time) > DRIFT_THRESHOLD) {
           p.seek(d.time);
@@ -810,7 +1135,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   // ── Signaling & Fresh Reconnect ──
   function scheduleAutoReconnect(reason = 'Connection lost') {
     if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
-    if (isIntentionalDisconnect) return;
+    if (isIntentionalDisconnect || isPeerDisconnected) return;
 
     // 2-second delay with slight jitter (0-300ms) to prevent glare/sync loops between the two peers
     const delay = 2000 + Math.floor(Math.random() * 300);
@@ -823,7 +1148,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
     autoReconnectTimer = setTimeout(() => {
       autoReconnectTimer = null;
-      if (!isIntentionalDisconnect && peerConnection?.connectionState !== 'connected') {
+      if (!isIntentionalDisconnect && !isPeerDisconnected && peerConnection?.connectionState !== 'connected') {
         console.log('[C2P] Triggering automatic fresh reconnect now...');
         forceFreshReconnect();
       }
@@ -849,6 +1174,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     resetWebRTC();
     reconnectAttempts = 0;
     isIntentionalDisconnect = false;
+    isPeerDisconnected = false;
     setInputEnabled(false);
     const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
 
@@ -886,7 +1212,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       return;
     }
     console.log('[C2P] Connecting to signaling server:', serverUrl);
+    isIntentionalDisconnect = false;
+    isPeerDisconnected = false;
     updateStatus('connecting', 'Connecting...');
+    try { sessionStorage.setItem('c2p_session_active', '1'); } catch(e){}
     try {
       ws = new WebSocket(serverUrl);
     } catch(e) {
@@ -904,7 +1233,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const recBtn = document.getElementById('c2p-reconnect-btn');
       if (recBtn) recBtn.classList.remove('c2p-spinning');
       reconnectAttempts = 0;
-      if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+      if (isPeerDisconnected) {
+        updateStatus('disconnected', 'Peer off');
+      } else if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
         updateStatus('connected', 'Connected');
       } else {
         updateStatus('connecting', 'Waiting for peer...');
@@ -924,7 +1255,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         switch(msg.type) {
           case 'ping': ws.send(JSON.stringify({ type: 'pong' })); break;
           case 'pong': break;
+          case 'peer_disconnected':
+            handlePeerDisconnected();
+            break;
           case 'hello':
+            isPeerDisconnected = false;
             console.log('[C2P] Peer announced presence in lounge');
             if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
             if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
@@ -940,6 +1275,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             setTimeout(() => { isNegotiating = false; }, 3000);
             break;
           case 'peer_joined':
+            isPeerDisconnected = false;
             console.log('[C2P] Peer joined room');
             if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
             if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
@@ -960,13 +1296,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
               break;
             }
             // Do not reset WebRTC or show error popups on stale ghost disconnects
-            if (peerConnection?.connectionState !== 'connected') {
+            if (!isPeerDisconnected && peerConnection?.connectionState !== 'connected') {
               updateStatus('connecting', 'Waiting for peer...');
               const b = document.getElementById('c2p-connect-btn');
               if (b) b.textContent = 'Waiting for peer...';
             }
             break;
           case 'offer':
+            isPeerDisconnected = false;
             console.log('[C2P] Received offer from peer');
             if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
             const now = Date.now();
@@ -1022,7 +1359,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       console.log('[C2P] WebSocket closed:', event?.code, event?.reason);
       const recBtn = document.getElementById('c2p-reconnect-btn');
       if (recBtn) recBtn.classList.remove('c2p-spinning');
-      if (!isIntentionalDisconnect) {
+      if (isPeerDisconnected) {
+        updateStatus('disconnected', 'Peer disconnected');
+      } else if (!isIntentionalDisconnect) {
         attemptReconnect();
       } else if (peerConnection?.connectionState !== 'connected') {
         updateStatus('disconnected', 'Disconnected');
@@ -1059,6 +1398,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const state = peerConnection.iceConnectionState;
       console.log('[C2P] ICE Connection State:', state);
       if (state === 'failed') {
+        if (isPeerDisconnected) {
+          updateStatus('disconnected', 'Peer disconnected');
+          return;
+        }
         updateStatus('disconnected', 'ICE Failed');
         showSetupBanner('Reconnect Fresh Session', 'Network route failed. Click to reconnect.');
         resetWebRTC();
@@ -1088,6 +1431,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       } else if (['disconnected', 'failed', 'closed'].includes(s)) {
         const recBtn = document.getElementById('c2p-reconnect-btn');
         if (recBtn) recBtn.classList.remove('c2p-spinning');
+        if (isPeerDisconnected) {
+          updateStatus('disconnected', 'Peer disconnected');
+          return;
+        }
         updateStatus('disconnected', 'Connection lost');
         showSetupBanner('Reconnect Fresh Session', 'Connection lost. Click to reconnect.');
         resetWebRTC();
@@ -1123,7 +1470,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     dataChannel.onmessage = event => {
       try {
         const d = JSON.parse(event.data);
-        if (d.type === 'sync') handleSyncMessage(d);
+        if (d.type === 'peer_disconnected') handlePeerDisconnected();
+        else if (d.type === 'sync') handleSyncMessage(d);
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
         else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received'); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
@@ -1186,17 +1534,84 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       clearTimeout(autoReconnectTimer);
       autoReconnectTimer = null;
     }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     resetWebRTC();
     showSetupBanner('Reconnect Fresh Session', 'Click to reconnect and wait for a peer.');
     if (full) {
       isIntentionalDisconnect = true;
-      if (ws) ws.close();
+      try { sessionStorage.removeItem('c2p_session_active'); } catch(e){}
+      if (ws) {
+        try { ws.onclose = null; ws.close(); } catch(e){}
+        ws = null;
+      }
       const b = document.getElementById('c2p-connect-btn');
       if (b) { b.disabled = false; b.textContent = 'Reconnect Fresh Session'; }
     } else {
       const b = document.getElementById('c2p-connect-btn');
       if (b) { b.disabled = true; b.textContent = 'Reconnecting...'; }
     }
+  }
+
+  function handlePeerDisconnected() {
+    console.log('[C2P] Remote peer manually disconnected the session.');
+    isPeerDisconnected = true;
+    if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempts = 0;
+    try { sessionStorage.removeItem('c2p_session_active'); } catch(e){}
+    resetWebRTC();
+    if (ws) {
+      try {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      } catch(e){}
+      ws = null;
+    }
+    updateStatus('disconnected', 'Peer disconnected');
+    displaySystemMessage('Peer disconnected the session.', 'warn');
+    showSetupBanner('Enter Lounge', 'Peer disconnected. Click to wait for a new peer.');
+    const recBtn = document.getElementById('c2p-reconnect-btn');
+    if (recBtn) recBtn.classList.remove('c2p-spinning');
+  }
+
+  function terminateConnection() {
+    console.log('[C2P] Manually terminating connection and stopping automatic retries.');
+    isIntentionalDisconnect = true;
+    if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempts = 0;
+    try { sessionStorage.removeItem('c2p_session_active'); } catch(e){}
+    setInputEnabled(false);
+
+    const discMsg = JSON.stringify({ type: 'peer_disconnected', reason: 'manual' });
+    if (dataChannel && dataChannel.readyState === 'open') {
+      try { dataChannel.send(discMsg); } catch(e){}
+    }
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(discMsg); } catch(e){}
+    }
+
+    setTimeout(() => {
+      resetWebRTC();
+      if (ws) {
+        try {
+          ws.onclose = null;
+          ws.onerror = null;
+          ws.close();
+        } catch(e){}
+        ws = null;
+      }
+    }, 50);
+
+    updateStatus('disconnected', 'Disconnected');
+    displaySystemMessage('Connection terminated. Auto-reconnect stopped.', 'warn');
+    showSetupBanner('Enter Lounge', 'Connection closed. Click to connect when ready.');
+    const recBtn = document.getElementById('c2p-reconnect-btn');
+    if (recBtn) recBtn.classList.remove('c2p-spinning');
   }
 
   // ── Typing Indicator Helpers ──
@@ -1343,13 +1758,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
   function sendNudge() {
     if (nudgeCooldown) {
-      displaySystemMessage('No puedes enviar un zumbido tan seguido.', 'clock');
+      displaySystemMessage('Wait to send another buzz.', 'clock');
       return;
     }
     if (!dataChannel || dataChannel.readyState !== 'open') return;
     dataChannel.send(JSON.stringify({ type: 'nudge' }));
     triggerNudgeEffect();
-    displaySystemMessage('Has enviado un zumbido.', 'bell');
+    displaySystemMessage('You sent a buzz.', 'bell');
     nudgeCooldown = true;
     const b = document.getElementById('c2p-nudge-btn');
     if (b) { b.disabled = true; b.style.opacity = '0.3'; }
@@ -1365,7 +1780,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function handleIncomingNudge() {
     if (!sidebarVisible) toggleSidebar();
     triggerNudgeEffect();
-    displaySystemMessage('¡Te han enviado un zumbido!', 'bell');
+    displaySystemMessage('Peer sent you a buzz!', 'bell');
   }
 
   // ── Voice Notes ──
@@ -1679,6 +2094,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const h = document.getElementById('c2p-setup-hint');
       if (h) { h.innerHTML = '⚠ Click ⚙️ to set Server URL'; h.style.color = '#e50914'; }
     }
+    try {
+      syncSidebarWithRoute();
+      if (sessionStorage.getItem('c2p_session_active') === '1') {
+        console.log('[C2P] Auto-reconnecting active session after navigation/reload...');
+        connectSignaling();
+      }
+    } catch (e) {}
   }
   if (document.readyState === 'complete') init();
   else window.addEventListener('load', init);
