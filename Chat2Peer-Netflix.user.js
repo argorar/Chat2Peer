@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.7.0
+// @version      1.8.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -13,6 +13,7 @@
 // @grant        unsafeWindow
 // @connect      api.klipy.co
 // @connect      cdn.pixabay.com
+// @connect      raw.githubusercontent.com
 // @updateURL    https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js
 // @downloadURL  https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js
 // @noframes
@@ -35,6 +36,10 @@
   };
 
   // ── State ──
+  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '1.7.0';
+  const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js';
+  let isCheckingUpdate = false;
+  let hasCheckedUpdate = false;
   let ws = null, peerConnection = null, dataChannel = null, sidebarVisible = false;
   let serverUrl = getVal('serverUrl', 'wss://chat2peer.onrender.com/ws');
   let nickname = getVal('nickname', '');
@@ -98,18 +103,222 @@
   }, true);
 
   // ── Settings ──
-  function promptServerUrl() {
-    const val = prompt('Signaling Server WebSocket URL:', serverUrl || 'wss://chat2peer.onrender.com/ws');
-    if (val !== null) { serverUrl = val.trim(); setVal('serverUrl', serverUrl); }
-  }
-  function promptNickname() {
-    const val = prompt('Your nickname:', nickname);
-    if (val !== null) { nickname = val.trim(); setVal('nickname', nickname); }
+  function openSettingsModal() {
+    if (!sidebarVisible) toggleSidebar(true);
+    const kc = document.getElementById('c2p-klipy-container');
+    if (kc) kc.style.display = 'none';
+    const modal = document.getElementById('c2p-settings-modal');
+    if (!modal) return;
+    const nickInput = document.getElementById('c2p-setting-nickname');
+    const serverInput = document.getElementById('c2p-setting-server');
+    const hint = document.getElementById('c2p-server-hint');
+    if (nickInput) nickInput.value = nickname || '';
+    if (serverInput) {
+      serverInput.value = serverUrl || '';
+      serverInput.classList.remove('c2p-input-error');
+    }
+    if (hint) {
+      hint.textContent = 'WebSocket URL for WebRTC handshake';
+      hint.style.color = '';
+    }
+    const updateStatus = document.getElementById('c2p-update-status');
+    const updateBtn = document.getElementById('c2p-check-update-btn');
+    if (updateStatus && !isCheckingUpdate && !updateStatus.textContent.includes('Update available')) {
+      updateStatus.textContent = `v${SCRIPT_VERSION} (Installed)`;
+      updateStatus.style.color = '';
+    }
+    if (updateBtn && !isCheckingUpdate && !updateBtn.textContent.startsWith('Install')) {
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Check for updates';
+      updateBtn.onclick = () => checkForScriptUpdates(true);
+    }
+    modal.style.display = 'flex';
+    if (serverInput) {
+      activeSidebarInput = serverInput;
+      setTimeout(() => serverInput.focus(), 50);
+    }
   }
 
+  function closeSettingsModal() {
+    const modal = document.getElementById('c2p-settings-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    focusMsgInput();
+  }
+
+  function toggleSettingsModal() {
+    const modal = document.getElementById('c2p-settings-modal');
+    if (!modal) return;
+    if (modal.style.display === 'flex') {
+      closeSettingsModal();
+    } else {
+      openSettingsModal();
+    }
+  }
+
+  function saveSettings() {
+    const serverInput = document.getElementById('c2p-setting-server');
+    const nickInput = document.getElementById('c2p-setting-nickname');
+    const hint = document.getElementById('c2p-server-hint');
+    if (!serverInput) return;
+
+    let newUrl = serverInput.value.trim();
+    const newNick = nickInput ? nickInput.value.trim() : '';
+
+    if (newUrl && !newUrl.startsWith('ws://') && !newUrl.startsWith('wss://')) {
+      serverInput.classList.add('c2p-input-error');
+      if (hint) {
+        hint.textContent = '⚠ URL must start with ws:// or wss://';
+        hint.style.color = '#ef4444';
+      }
+      serverInput.focus();
+      return;
+    }
+
+    serverInput.classList.remove('c2p-input-error');
+    if (hint) {
+      hint.textContent = 'WebSocket URL for WebRTC handshake';
+      hint.style.color = '';
+    }
+
+    const prevUrl = serverUrl;
+    serverUrl = newUrl;
+    setVal('serverUrl', serverUrl);
+
+    nickname = newNick;
+    setVal('nickname', nickname);
+
+    if (serverUrl) {
+      const h = document.getElementById('c2p-setup-hint');
+      if (h && h.textContent.includes('Server URL')) {
+        h.innerHTML = 'Click to connect and wait for a peer.';
+        h.style.color = '';
+      }
+    }
+
+    closeSettingsModal();
+    displaySystemMessage('Settings saved.', 'refresh');
+
+    if (prevUrl !== serverUrl && (ws || peerConnection)) {
+      displayActionMessage('Server URL changed. Reconnect now?', 'Reconnect', forceFreshReconnect, 'refresh');
+    }
+  }
+
+  function isNewerVersion(remote, local) {
+    const r = (remote || '').split('.').map(n => parseInt(n, 10) || 0);
+    const l = (local || '').split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(r.length, l.length); i++) {
+      const rv = r[i] || 0;
+      const lv = l[i] || 0;
+      if (rv > lv) return true;
+      if (rv < lv) return false;
+    }
+    return false;
+  }
+
+  function checkForScriptUpdates(interactive = true) {
+    if (isCheckingUpdate) return;
+    isCheckingUpdate = true;
+    const btn = document.getElementById('c2p-check-update-btn');
+    const statusEl = document.getElementById('c2p-update-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+    if (statusEl) { statusEl.textContent = 'Checking GitHub for updates...'; statusEl.style.color = '#888'; }
+
+    const url = `${SCRIPT_UPDATE_URL}?t=${Date.now()}`;
+
+    const handleSuccess = (responseText) => {
+      isCheckingUpdate = false;
+      const match = responseText.match(/\/\/\s*@version\s+([0-9.]+)/);
+      const remoteVersion = match ? match[1] : null;
+
+      if (!remoteVersion) {
+        handleError(new Error('Version not found in remote script'));
+        return;
+      }
+
+      if (isNewerVersion(remoteVersion, SCRIPT_VERSION)) {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Install v' + remoteVersion;
+          btn.onclick = () => window.open(SCRIPT_UPDATE_URL, '_blank');
+        }
+        if (statusEl) {
+          statusEl.innerHTML = `Update available: <b style="color:#10b981;">v${remoteVersion}</b>`;
+          statusEl.style.color = '#10b981';
+        }
+        displayActionMessage(`New version available (v${remoteVersion}).`, 'Install Update', () => window.open(SCRIPT_UPDATE_URL, '_blank'), 'refresh');
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Check for updates';
+          btn.onclick = () => checkForScriptUpdates(true);
+        }
+        if (statusEl) {
+          statusEl.textContent = `✓ Latest version installed (v${SCRIPT_VERSION})`;
+          statusEl.style.color = '#10b981';
+        }
+        if (interactive) displaySystemMessage(`Chat2Peer is up to date (v${SCRIPT_VERSION}).`, 'refresh');
+      }
+    };
+
+    const handleError = (err) => {
+      isCheckingUpdate = false;
+      console.warn('[C2P] Update check failed:', err);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Retry check';
+        btn.onclick = () => checkForScriptUpdates(true);
+      }
+      if (statusEl) {
+        statusEl.textContent = '⚠ Could not check updates';
+        statusEl.style.color = '#ef4444';
+      }
+      if (interactive) displaySystemMessage('Could not check for updates. Check connection.', 'warn');
+    };
+
+    if (typeof GM_xmlhttpRequest !== 'undefined') {
+      try {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url: url,
+          timeout: 10000,
+          onload: (res) => {
+            if (res.status >= 200 && res.status < 300) handleSuccess(res.responseText);
+            else handleError(new Error('Status ' + res.status));
+          },
+          onerror: handleError,
+          ontimeout: () => handleError(new Error('Timeout'))
+        });
+        return;
+      } catch (e) {}
+    }
+
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error('Status ' + res.status);
+        return res.text();
+      })
+      .then(handleSuccess)
+      .catch(handleError);
+  }
+
+  function checkUpdateOnFirstOpen() {
+    if (hasCheckedUpdate) return;
+    hasCheckedUpdate = true;
+    setTimeout(() => {
+      checkForScriptUpdates(false);
+    }, 1200);
+  }
+
+  function promptServerUrl() { openSettingsModal(); }
+  function promptNickname() { openSettingsModal(); }
+
   if (typeof GM_registerMenuCommand !== 'undefined') {
-    GM_registerMenuCommand('⚙️ Set Server URL', promptServerUrl);
-    GM_registerMenuCommand('👤 Set Nickname', promptNickname);
+    GM_registerMenuCommand('⚙️ Settings', openSettingsModal);
+    GM_registerMenuCommand('🔄 Check for Updates', () => {
+      openSettingsModal();
+      checkForScriptUpdates(true);
+    });
   }
 
   // ── Inject CSS ──
@@ -158,6 +367,7 @@
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
+#c2p-sidebar .c2p-msg-author{font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:2px;line-height:1.2;letter-spacing:.02em}
 #c2p-sidebar .c2p-msg.c2p-system{align-self:center;background:transparent;color:#666;font-size:11px;box-shadow:none;border:1px dashed rgba(255,255,255,.08);border-radius:10px;padding:6px 12px;max-width:95%;text-align:center;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
 #c2p-sidebar .c2p-msg.c2p-system svg{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;flex-shrink:0}
 #c2p-sidebar .c2p-inline-action-btn{background:rgba(229,9,20,.18);color:#ff6b6b;border:1px solid rgba(229,9,20,.35);border-radius:99px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
@@ -238,6 +448,33 @@
 #c2p-sidebar .c2p-gif-item{width:100%;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;transition:transform .2s,box-shadow .2s;background:rgba(0,0,0,.3);user-select:none;-webkit-user-drag:none}
 #c2p-sidebar .c2p-gif-item:hover{transform:scale(1.05);box-shadow:0 4px 12px rgba(0,0,0,.5);border:1px solid #e50914}
 #c2p-sidebar .c2p-klipy-footer{padding:4px 8px;border-top:1px solid rgba(255,255,255,.06);text-align:center;background:rgba(0,0,0,.3);font-size:10px;color:#666}
+#c2p-sidebar .c2p-modal-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;animation:c2p-fadeIn .2s ease}
+@keyframes c2p-fadeIn{from{opacity:0}to{opacity:1}}
+#c2p-sidebar .c2p-modal-card{width:100%;max-width:328px;background:linear-gradient(180deg,rgba(32,32,32,.98),rgba(20,20,20,.98));border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.05);display:flex;flex-direction:column;overflow:hidden;animation:c2p-scaleIn .2s cubic-bezier(.16,1,.3,1) forwards}
+#c2p-sidebar .c2p-modal-header{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02)}
+#c2p-sidebar .c2p-modal-title-group{display:flex;align-items:center;gap:8px}
+#c2p-sidebar .c2p-modal-title-group svg{color:#e50914;display:block}
+#c2p-sidebar .c2p-modal-title-group h3{margin:0;font-size:14px;font-weight:700;color:#fff;line-height:1}
+#c2p-sidebar .c2p-version-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(229,9,20,.18);color:#ff6b6b;border:1px solid rgba(229,9,20,.35);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;letter-spacing:.3px;line-height:1.2}
+#c2p-sidebar .c2p-modal-close{background:none;border:none;color:#888;cursor:pointer;padding:4px 6px;border-radius:4px;font-size:14px;line-height:1;transition:all .2s;display:flex;align-items:center;justify-content:center}
+#c2p-sidebar .c2p-modal-close:hover{color:#fff;background:rgba(255,255,255,.08)}
+#c2p-sidebar .c2p-modal-body{padding:16px;display:flex;flex-direction:column;gap:14px}
+#c2p-sidebar .c2p-form-group{display:flex;flex-direction:column;gap:5px}
+#c2p-sidebar .c2p-form-group label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#aaa}
+#c2p-sidebar .c2p-form-label-row{display:flex;justify-content:space-between;align-items:center}
+#c2p-sidebar .c2p-link-btn{background:none;border:none;color:#e50914;font-size:10px;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline;transition:color .2s}
+#c2p-sidebar .c2p-link-btn:hover:not(:disabled){color:#ff6b6b}
+#c2p-sidebar .c2p-link-btn:disabled{color:#666;cursor:not-allowed;text-decoration:none}
+#c2p-sidebar .c2p-form-group input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;color:#e5e5e5;font-size:12px;outline:none;transition:all .2s;font-family:inherit}
+#c2p-sidebar .c2p-form-group input:focus{border-color:rgba(229,9,20,.6);background:rgba(255,255,255,.1);box-shadow:0 0 0 3px rgba(229,9,20,.12)}
+#c2p-sidebar .c2p-form-group input.c2p-input-error{border-color:#ef4444;background:rgba(239,68,68,.1)}
+#c2p-sidebar .c2p-field-hint{font-size:10px;color:#666;line-height:1.3}
+#c2p-sidebar .c2p-modal-footer{padding:12px 16px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.2)}
+#c2p-sidebar .c2p-modal-foot-note{padding:0 16px 10px;text-align:center;font-size:10px;color:#555}
+#c2p-sidebar .c2p-btn-secondary{background:rgba(255,255,255,.08);color:#ccc;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+#c2p-sidebar .c2p-btn-secondary:hover{background:rgba(255,255,255,.14);color:#fff}
+#c2p-sidebar .c2p-btn-primary{background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+#c2p-sidebar .c2p-btn-primary:hover{box-shadow:0 2px 12px rgba(229,9,20,.4);filter:brightness(1.1)}
 #c2p-sidebar .c2p-floating-emoji{position:absolute;bottom:0;font-size:36px;pointer-events:none;z-index:50;user-select:none;filter:drop-shadow(0 4px 8px rgba(0,0,0,.35));will-change:transform,opacity;animation-fill-mode:forwards}
 @keyframes c2p-floatUp{0%{transform:translate3d(0,0,0) scale(.65);opacity:0}12%{transform:translate3d(-5px,-11vh,0) scale(1.03) rotate(-2deg);opacity:1}35%{transform:translate3d(6px,-32vh,0) scale(1) rotate(2deg);opacity:1}60%{transform:translate3d(-5px,-55vh,0) scale(.99) rotate(-1.5deg);opacity:.95}80%{transform:translate3d(4px,-74vh,0) scale(.97) rotate(1deg);opacity:.75}100%{transform:translate3d(0,-88vh,0) scale(.94) rotate(0deg);opacity:0}}
 @keyframes c2p-floatUpAlt{0%{transform:translate3d(0,0,0) scale(.65);opacity:0}12%{transform:translate3d(5px,-11vh,0) scale(1.03) rotate(2deg);opacity:1}35%{transform:translate3d(-6px,-32vh,0) scale(1) rotate(-2deg);opacity:1}60%{transform:translate3d(5px,-55vh,0) scale(.99) rotate(1.5deg);opacity:.95}80%{transform:translate3d(-4px,-74vh,0) scale(.97) rotate(-1deg);opacity:.75}100%{transform:translate3d(0,-88vh,0) scale(.94) rotate(0deg);opacity:0}}
@@ -285,7 +522,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         <div style="display:flex;gap:6px;align-items:center;position:relative;">
           <button id="c2p-reconnect-btn" class="c2p-header-btn" title="Force Fresh Reconnect"><svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
           <button id="c2p-settings-btn" class="c2p-header-btn" title="Settings"><svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
-          <div class="c2p-status-badge c2p-disconnected" id="c2p-status" title="Estado de conexión (clic para opciones)">Disconnected</div>
+          <div class="c2p-status-badge c2p-disconnected" id="c2p-status" title="Connection state">Disconnected</div>
           <div id="c2p-status-popover" class="c2p-status-popover">
             <button id="c2p-disconnect-action-btn" class="c2p-btn-disconnect-popover">✕ Disconnect</button>
           </div>
@@ -350,12 +587,51 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         </div>
         <div id="c2p-klipy-results" class="c2p-klipy-results"></div>
         <div class="c2p-klipy-footer"><small>Powered by Klipy</small></div>
+      </div>
+      <div id="c2p-settings-modal" class="c2p-modal-overlay" style="display:none;">
+        <div class="c2p-modal-card">
+          <div class="c2p-modal-header">
+            <div class="c2p-modal-title-group">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              <h3>Settings</h3>
+              <span class="c2p-version-badge" title="Installed script version">v${SCRIPT_VERSION}</span>
+            </div>
+            <button id="c2p-settings-close-btn" class="c2p-modal-close" title="Close">✕</button>
+          </div>
+          <div class="c2p-modal-body">
+            <div class="c2p-form-group">
+              <label for="c2p-setting-nickname">Nickname</label>
+              <input type="text" id="c2p-setting-nickname" placeholder="e.g. Alex" autocomplete="off" spellcheck="false">
+              <span class="c2p-field-hint">Your display name in chat</span>
+            </div>
+            <div class="c2p-form-group">
+              <div class="c2p-form-label-row">
+                <label for="c2p-setting-server">Signaling Server URL</label>
+                <button type="button" id="c2p-setting-server-reset" class="c2p-link-btn" title="Reset to default URL">Reset default</button>
+              </div>
+              <input type="text" id="c2p-setting-server" placeholder="wss://chat2peer.onrender.com/ws" autocomplete="off" spellcheck="false">
+              <span class="c2p-field-hint" id="c2p-server-hint">WebSocket URL for WebRTC handshake</span>
+            </div>
+            <div class="c2p-form-group">
+              <div class="c2p-form-label-row">
+                <label>Script Updates</label>
+                <button type="button" id="c2p-check-update-btn" class="c2p-link-btn" title="Check GitHub for script updates">Check for updates</button>
+              </div>
+              <span class="c2p-field-hint" id="c2p-update-status">v${SCRIPT_VERSION} (Installed)</span>
+            </div>
+          </div>
+          <div class="c2p-modal-footer">
+            <button type="button" id="c2p-settings-cancel-btn" class="c2p-btn-secondary">Cancel</button>
+            <button type="button" id="c2p-settings-save-btn" class="c2p-btn-primary">Save Changes</button>
+          </div>
+          <div class="c2p-modal-foot-note"><small>Chat2Peer for Netflix • v${SCRIPT_VERSION}</small></div>
+        </div>
       </div>`;
     document.body.appendChild(sidebar);
 
     toggleBtn.addEventListener('click', () => toggleSidebar());
     document.getElementById('c2p-close-btn').addEventListener('click', () => toggleSidebar(false));
-    document.getElementById('c2p-settings-btn').addEventListener('click', promptServerUrl);
+    document.getElementById('c2p-settings-btn').addEventListener('click', toggleSettingsModal);
     document.getElementById('c2p-reconnect-btn').addEventListener('click', forceFreshReconnect);
     document.getElementById('c2p-connect-btn').addEventListener('click', forceFreshReconnect);
     document.getElementById('c2p-send-btn').addEventListener('click', sendMessage);
@@ -387,13 +663,31 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       });
     }
 
+    const settingNick = document.getElementById('c2p-setting-nickname');
+    const settingServer = document.getElementById('c2p-setting-server');
+
     // Stop key events from bubbling to Netflix's video player controls
     ['keydown', 'keyup', 'keypress'].forEach(type => {
       sidebar.addEventListener(type, e => {
         e.stopPropagation();
-        if (type === 'keydown' && (e.key === 'Enter' || e.keyCode === 13) && e.target === msgInput) {
-          e.preventDefault();
-          sendMessage();
+        if (type === 'keydown') {
+          if (e.key === 'Escape') {
+            const sm = document.getElementById('c2p-settings-modal');
+            if (sm && sm.style.display !== 'none') {
+              e.preventDefault();
+              closeSettingsModal();
+              return;
+            }
+          }
+          if (e.key === 'Enter' || e.keyCode === 13) {
+            if (e.target === msgInput) {
+              e.preventDefault();
+              sendMessage();
+            } else if (e.target === settingNick || e.target === settingServer) {
+              e.preventDefault();
+              saveSettings();
+            }
+          }
         }
       });
     });
@@ -422,6 +716,42 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
     const msgInput = document.getElementById('c2p-msg-input');
     setupInputFocusProtection(msgInput);
+    setupInputFocusProtection(settingNick);
+    setupInputFocusProtection(settingServer);
+
+    const settingsCloseBtn = document.getElementById('c2p-settings-close-btn');
+    if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettingsModal);
+    const settingsCancelBtn = document.getElementById('c2p-settings-cancel-btn');
+    if (settingsCancelBtn) settingsCancelBtn.addEventListener('click', closeSettingsModal);
+    const settingsSaveBtn = document.getElementById('c2p-settings-save-btn');
+    if (settingsSaveBtn) settingsSaveBtn.addEventListener('click', saveSettings);
+
+    const settingResetBtn = document.getElementById('c2p-setting-server-reset');
+    if (settingResetBtn) {
+      settingResetBtn.addEventListener('click', () => {
+        if (settingServer) {
+          settingServer.value = 'wss://chat2peer.onrender.com/ws';
+          settingServer.classList.remove('c2p-input-error');
+          const hint = document.getElementById('c2p-server-hint');
+          if (hint) { hint.textContent = 'WebSocket URL for WebRTC handshake'; hint.style.color = ''; }
+          settingServer.focus();
+        }
+      });
+    }
+
+    const checkUpdateBtn = document.getElementById('c2p-check-update-btn');
+    if (checkUpdateBtn) {
+      checkUpdateBtn.addEventListener('click', () => checkForScriptUpdates(true));
+    }
+
+    const settingsModal = document.getElementById('c2p-settings-modal');
+    if (settingsModal) {
+      settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+          closeSettingsModal();
+        }
+      });
+    }
     msgInput.addEventListener('input', handleLocalTyping);
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
@@ -466,6 +796,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     setupInputFocusProtection(klipySearch);
 
     gifBtn.addEventListener('click', () => {
+      const sm = document.getElementById('c2p-settings-modal'); if (sm) sm.style.display = 'none';
       if (klipyContainer.style.display === 'none') {
         klipyContainer.style.display = 'flex';
         activeSidebarInput = klipySearch;
@@ -582,11 +913,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       if (persist) {
         try { sessionStorage.setItem('c2p_sidebar_open', '1'); } catch(e){}
       }
+      checkUpdateOnFirstOpen();
     } else {
       activeSidebarInput = null;
       sidebar.classList.add('c2p-hidden'); btn.classList.remove('c2p-sidebar-open');
       document.body.classList.remove('c2p-sidebar-active');
       const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
+      const sm = document.getElementById('c2p-settings-modal'); if (sm) sm.style.display = 'none';
       if (persist) {
         try { sessionStorage.removeItem('c2p_sidebar_open'); } catch(e){}
       }
@@ -650,10 +983,26 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (btn) { btn.disabled = false; btn.textContent = btnText; }
     if (hint) { hint.textContent = hintText; hint.style.color = '#888'; }
   }
-  function displayUserMessage(content, type, isGif = false) {
+  function displayUserMessage(content, type, isGif = false, author = null) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
-    if (isGif) { d.style.cssText='background:transparent;padding:0;border:none'; const w=document.createElement('div'); w.classList.add('c2p-gif-wrap'); const i=document.createElement('img'); i.src=content; w.appendChild(i); d.appendChild(w); }
-    else { d.textContent = content; }
+    if (isGif) {
+      d.style.cssText = 'background:transparent;padding:0;border:none';
+      const w = document.createElement('div'); w.classList.add('c2p-gif-wrap');
+      const i = document.createElement('img'); i.src = content;
+      w.appendChild(i); d.appendChild(w);
+    } else {
+      if (author && type === 'received') {
+        const authEl = document.createElement('div');
+        authEl.classList.add('c2p-msg-author');
+        authEl.textContent = author;
+        d.appendChild(authEl);
+        const textEl = document.createElement('div');
+        textEl.textContent = content;
+        d.appendChild(textEl);
+      } else {
+        d.textContent = content;
+      }
+    }
     appendMsg(d);
   }
   function appendMsg(el) { const c = document.getElementById('c2p-messages'); if(c){c.appendChild(el); scrollToBottom(true);} }
@@ -1205,7 +1554,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function connectSignaling() {
     if (!serverUrl) {
       console.warn('[C2P] No server URL configured.');
-      displaySystemMessage('No server URL. Right-click Tampermonkey icon → Chat2Peer → Set Server URL', 'warn');
+      displayActionMessage('No server URL configured.', 'Open Settings', openSettingsModal, 'warn');
       showSetupBanner('Enter Lounge', 'Please set the Signaling Server URL first.');
       const recBtn = document.getElementById('c2p-reconnect-btn');
       if (recBtn) recBtn.classList.remove('c2p-spinning');
@@ -1473,7 +1822,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         if (d.type === 'peer_disconnected') handlePeerDisconnected();
         else if (d.type === 'sync') handleSyncMessage(d);
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
-        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received'); }
+        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
         else if (d.type === 'sfx') {
           playSoundEffect(d.idx);
@@ -1666,7 +2015,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (t && dataChannel?.readyState === 'open') {
       if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
       if (isTypingLocally) { isTypingLocally = false; sendTypingStatus(false); }
-      dataChannel.send(JSON.stringify({ type: 'text', content: t }));
+      const payload = { type: 'text', content: t };
+      if (nickname && nickname.trim()) {
+        payload.nickname = nickname.trim();
+      }
+      dataChannel.send(JSON.stringify(payload));
       displayUserMessage(t, 'sent');
       i.value = '';
     }
@@ -2101,6 +2454,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         connectSignaling();
       }
     } catch (e) {}
+    if (sidebarVisible) {
+      checkUpdateOnFirstOpen();
+    }
   }
   if (document.readyState === 'complete') init();
   else window.addEventListener('load', init);
