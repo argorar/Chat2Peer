@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.8.0
+// @version      1.9.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -36,7 +36,7 @@
   };
 
   // ── State ──
-  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '1.7.0';
+  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '0.0.0';
   const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/argorar/Chat2Peer/main/Chat2Peer-Netflix.user.js';
   let isCheckingUpdate = false;
   let hasCheckedUpdate = false;
@@ -86,6 +86,11 @@
   // ── Voice Notes State ──
   let mediaRecorder = null, audioChunks = [], recordTimerInterval = null, recordStartTime = 0;
   let incomingAudioChunks = {};
+
+  // ── Clipboard Images State ──
+  let incomingImageChunks = {};
+  let pendingImageBlob = null;
+  let pendingImageThumbUrl = null;
 
   // ── Typing Indicator State ──
   let localTypingTimeout = null, isTypingLocally = false, remoteTypingTimeout = null;
@@ -374,6 +379,21 @@
 #c2p-sidebar .c2p-inline-action-btn:hover{background:rgba(229,9,20,.35);color:#fff;border-color:rgba(229,9,20,.6);transform:scale(1.05)}
 #c2p-sidebar .c2p-msg .c2p-gif-wrap{border-radius:8px;overflow:hidden;display:inline-block;margin-top:4px}
 #c2p-sidebar .c2p-msg .c2p-gif-wrap img{height:120px;width:auto;display:block;border-radius:4px}
+#c2p-sidebar .c2p-msg .c2p-image-wrap{border-radius:10px;overflow:hidden;display:inline-block;max-width:240px;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 16px rgba(0,0,0,.5);background:rgba(0,0,0,.3);cursor:pointer;transition:transform .2s,border-color .2s}
+#c2p-sidebar .c2p-msg .c2p-image-wrap:hover{transform:scale(1.02);border-color:#e50914}
+#c2p-sidebar .c2p-msg .c2p-image-wrap img{display:block;max-width:100%;max-height:260px;object-fit:cover;border-radius:9px}
+#c2p-sidebar .c2p-image-preview-bar{display:none;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(20,20,20,.95);border-top:1px solid rgba(255,255,255,.08);flex-shrink:0;animation:c2p-slideUp .2s cubic-bezier(.22,1,.36,1)}
+#c2p-sidebar .c2p-preview-info{display:flex;align-items:center;gap:10px;min-width:0}
+#c2p-sidebar .c2p-preview-thumb{width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,.15);flex-shrink:0}
+#c2p-sidebar .c2p-preview-details{display:flex;flex-direction:column;gap:2px;overflow:hidden}
+#c2p-sidebar .c2p-preview-title{font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#c2p-sidebar .c2p-preview-size{font-size:10px;color:#888}
+#c2p-sidebar .c2p-preview-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+#c2p-sidebar .c2p-preview-btn{width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s;font-family:inherit}
+#c2p-sidebar .c2p-preview-cancel{background:rgba(255,255,255,.1);color:#aaa}
+#c2p-sidebar .c2p-preview-cancel:hover{background:rgba(239,68,68,.25);color:#ef4444}
+#c2p-sidebar .c2p-preview-send{background:linear-gradient(135deg,#e50914,#b20710);color:#fff}
+#c2p-sidebar .c2p-preview-send:hover{transform:scale(1.08);box-shadow:0 0 12px rgba(229,9,20,.5)}
 #c2p-sidebar .c2p-typing-indicator{display:flex;align-items:center;gap:6px;padding:4px 16px;font-size:11px;color:#888;min-height:20px;transition:opacity .2s,visibility .2s;flex-shrink:0}
 #c2p-sidebar .c2p-typing-indicator.c2p-hidden{opacity:0;visibility:hidden;pointer-events:none}
 #c2p-sidebar .c2p-typing-dots{display:inline-flex;gap:3px;align-items:center}
@@ -541,6 +561,19 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       </div>
       <div class="c2p-sfx-bar">${SOUND_EFFECTS.map((s, i) => `<button class="c2p-sfx-btn" data-sfx="${i}" title="${s.name}" disabled><svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${s.svg}</svg></button>`).join('')}</div>
       <div class="c2p-emoji-bar">${EMOJIS.map(e => `<button class="c2p-emoji-btn" data-emoji="${e}" disabled>${e}</button>`).join('')}</div>
+      <div id="c2p-image-preview-bar" class="c2p-image-preview-bar" style="display:none;">
+        <div class="c2p-preview-info">
+          <img id="c2p-preview-thumb" class="c2p-preview-thumb" src="" alt="Preview">
+          <div class="c2p-preview-details">
+            <span class="c2p-preview-title">Pasted Image</span>
+            <span id="c2p-preview-size" class="c2p-preview-size">0 KB</span>
+          </div>
+        </div>
+        <div class="c2p-preview-actions">
+          <button id="c2p-preview-cancel-btn" class="c2p-preview-btn c2p-preview-cancel" title="Discard image">✕</button>
+          <button id="c2p-preview-send-btn" class="c2p-preview-btn c2p-preview-send" title="Send image">✓</button>
+        </div>
+      </div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
           <span class="c2p-record-dot"></span>
@@ -672,6 +705,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         e.stopPropagation();
         if (type === 'keydown') {
           if (e.key === 'Escape') {
+            const pb = document.getElementById('c2p-image-preview-bar');
+            if (pb && pb.style.display !== 'none') {
+              e.preventDefault();
+              clearImagePreview();
+              return;
+            }
             const sm = document.getElementById('c2p-settings-modal');
             if (sm && sm.style.display !== 'none') {
               e.preventDefault();
@@ -682,6 +721,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           if (e.key === 'Enter' || e.keyCode === 13) {
             if (e.target === msgInput) {
               e.preventDefault();
+              if (pendingImageBlob) {
+                sendPendingImage();
+              }
               sendMessage();
             } else if (e.target === settingNick || e.target === settingServer) {
               e.preventDefault();
@@ -752,11 +794,26 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         }
       });
     }
+
+    sidebar.addEventListener('paste', handlePasteEvent);
+
+    const previewCancelBtn = document.getElementById('c2p-preview-cancel-btn');
+    if (previewCancelBtn) previewCancelBtn.addEventListener('click', clearImagePreview);
+
+    const previewSendBtn = document.getElementById('c2p-preview-send-btn');
+    if (previewSendBtn) previewSendBtn.addEventListener('click', () => {
+      sendPendingImage();
+      sendMessage();
+    });
+
     msgInput.addEventListener('input', handleLocalTyping);
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
+        if (pendingImageBlob) {
+          sendPendingImage();
+        }
         sendMessage();
       }
     });
@@ -983,13 +1040,36 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (btn) { btn.disabled = false; btn.textContent = btnText; }
     if (hint) { hint.textContent = hintText; hint.style.color = '#888'; }
   }
-  function displayUserMessage(content, type, isGif = false, author = null) {
+  function displayUserMessage(content, type, isGif = false, author = null, isImage = false) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
     if (isGif) {
       d.style.cssText = 'background:transparent;padding:0;border:none';
       const w = document.createElement('div'); w.classList.add('c2p-gif-wrap');
       const i = document.createElement('img'); i.src = content;
       w.appendChild(i); d.appendChild(w);
+    } else if (isImage) {
+      d.style.cssText = 'background:transparent;padding:0;border:none';
+      if (author && type === 'received') {
+        const authEl = document.createElement('div');
+        authEl.classList.add('c2p-msg-author');
+        authEl.style.padding = '0 4px 4px';
+        authEl.textContent = author;
+        d.appendChild(authEl);
+      }
+      const w = document.createElement('div');
+      w.classList.add('c2p-image-wrap');
+      const img = document.createElement('img');
+      img.src = content;
+      img.alt = 'Pasted image';
+      img.title = 'Click to open in new tab';
+      img.addEventListener('click', () => {
+        const win = window.open();
+        if (win) {
+          win.document.write(`<body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${content}" style="max-width:100%;max-height:100%;object-fit:contain;"></body>`);
+        }
+      });
+      w.appendChild(img);
+      d.appendChild(w);
     } else {
       if (author && type === 'received') {
         const authEl = document.createElement('div');
@@ -1525,6 +1605,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     isIntentionalDisconnect = false;
     isPeerDisconnected = false;
     setInputEnabled(false);
+    incomingImageChunks = {};
+    clearImagePreview();
     const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
 
     updateStatus('connecting', 'Reconnecting...');
@@ -1847,6 +1929,26 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             displayAudioMessage(fullDataUrl, 'received', item.duration);
           }
         }
+        else if (d.type === 'image_chunk') {
+          showRemoteTyping(false);
+          if (!incomingImageChunks[d.id]) {
+            incomingImageChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), nickname: d.nickname || null };
+          }
+          const item = incomingImageChunks[d.id];
+          if (d.nickname && !item.nickname) {
+            item.nickname = d.nickname;
+          }
+          if (!item.chunks[d.index]) {
+            item.chunks[d.index] = d.chunk;
+            item.received++;
+          }
+          if (item.received === item.total) {
+            const fullDataUrl = item.chunks.join('');
+            const senderNick = item.nickname;
+            delete incomingImageChunks[d.id];
+            displayUserMessage(fullDataUrl, 'received', false, senderNick, true);
+          }
+        }
         else if (d.type === 'ping') {
           if (dataChannel && dataChannel.readyState === 'open') {
             dataChannel.send(JSON.stringify({ type: 'pong' }));
@@ -1875,6 +1977,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       peerConnection = null;
     }
     setInputEnabled(false);
+    incomingImageChunks = {};
+    clearImagePreview();
     const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
   }
 
@@ -2326,6 +2430,132 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     player.appendChild(timeline);
     d.appendChild(player);
     appendMsg(d);
+  }
+
+  // ── Clipboard Images ──
+  function compressImageBlob(file, maxDim = 1280, quality = 0.82) {
+    return new Promise((resolve) => {
+      if (file.type === 'image/gif' || file.type === 'image/svg+xml' || file.size < 60 * 1024) {
+        return resolve(file);
+      }
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((b) => resolve(b || file), 'image/jpeg', quality);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    });
+  }
+
+  async function processPastedImage(file) {
+    try {
+      const compressedBlob = await compressImageBlob(file, 1280, 0.82);
+      pendingImageBlob = compressedBlob;
+      if (pendingImageThumbUrl) URL.revokeObjectURL(pendingImageThumbUrl);
+      pendingImageThumbUrl = URL.createObjectURL(compressedBlob);
+
+      const previewBar = document.getElementById('c2p-image-preview-bar');
+      const thumb = document.getElementById('c2p-preview-thumb');
+      const sizeEl = document.getElementById('c2p-preview-size');
+
+      if (thumb) thumb.src = pendingImageThumbUrl;
+      if (sizeEl) {
+        const sizeKb = Math.round(compressedBlob.size / 1024);
+        sizeEl.textContent = sizeKb > 1024 ? (sizeKb / 1024).toFixed(1) + ' MB' : sizeKb + ' KB';
+      }
+      if (previewBar) {
+        previewBar.style.display = 'flex';
+        scrollToBottom(true);
+      }
+    } catch (err) {
+      console.error('[C2P] Error processing pasted image:', err);
+    }
+  }
+
+  function clearImagePreview() {
+    pendingImageBlob = null;
+    if (pendingImageThumbUrl) {
+      URL.revokeObjectURL(pendingImageThumbUrl);
+      pendingImageThumbUrl = null;
+    }
+    const previewBar = document.getElementById('c2p-image-preview-bar');
+    if (previewBar) previewBar.style.display = 'none';
+  }
+
+  function sendPendingImage() {
+    if (!pendingImageBlob) return;
+    if (dataChannel?.readyState !== 'open') {
+      displaySystemMessage('Connect first to send images.', 'warn');
+      return;
+    }
+    const blobToSend = pendingImageBlob;
+    clearImagePreview();
+    sendImageBlob(blobToSend);
+  }
+
+  function sendImageBlob(blob) {
+    if (!blob || dataChannel?.readyState !== 'open') return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Data = reader.result;
+      displayUserMessage(base64Data, 'sent', false, null, true);
+
+      const CHUNK_SIZE = 16384;
+      const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+      const imgId = 'img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const payload = {
+          type: 'image_chunk',
+          id: imgId,
+          index: i,
+          total: totalChunks,
+          chunk: chunk
+        };
+        if (i === 0 && nickname && nickname.trim()) {
+          payload.nickname = nickname.trim();
+        }
+        dataChannel.send(JSON.stringify(payload));
+      }
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function handlePasteEvent(e) {
+    const items = (e.clipboardData || window.clipboardData)?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          processPastedImage(file);
+          break;
+        }
+      }
+    }
   }
 
   // ── Klipy GIFs ──
