@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.9.0
+// @version      1.9.1
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -94,6 +94,10 @@
 
   // ── Typing Indicator State ──
   let localTypingTimeout = null, isTypingLocally = false, remoteTypingTimeout = null;
+
+  // ── Auto-scroll & User Scroll State ──
+  let userScrolledUp = false, hasUnreadBelow = false;
+  const SCROLL_THRESHOLD = 80;
 
   // ── Focus & Input Protection State ──
   let activeSidebarInput = null, userClickedOutside = false;
@@ -364,10 +368,16 @@
 #c2p-sidebar .c2p-btn-connect{background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border:none;border-radius:99px;padding:10px 28px;font-weight:600;font-size:13px;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);font-family:inherit}
 #c2p-sidebar .c2p-btn-connect:hover:not(:disabled){box-shadow:0 0 20px rgba(229,9,20,.4);transform:translateY(-1px)}
 #c2p-sidebar .c2p-btn-connect:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(60%)}
-#c2p-sidebar .c2p-messages{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;min-height:0}
+#c2p-sidebar .c2p-messages-wrap{position:relative;flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#c2p-sidebar .c2p-messages{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;min-height:0}
 #c2p-sidebar .c2p-messages::-webkit-scrollbar{width:4px}
 #c2p-sidebar .c2p-messages::-webkit-scrollbar-track{background:transparent}
 #c2p-sidebar .c2p-messages::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:4px}
+#c2p-sidebar .c2p-scroll-bottom-btn{position:absolute;bottom:12px;left:50%;transform:translateX(-50%) translateY(0);background:rgba(26,26,26,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;border:1px solid rgba(229,9,20,.45);box-shadow:0 4px 16px rgba(0,0,0,.6),0 0 10px rgba(229,9,20,.25);border-radius:99px;padding:6px 14px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;cursor:pointer;z-index:25;transition:all .2s cubic-bezier(.22,1,.36,1);user-select:none;font-family:inherit}
+#c2p-sidebar .c2p-scroll-bottom-btn:hover{background:rgba(38,38,38,.98);border-color:#e50914;box-shadow:0 4px 20px rgba(229,9,20,.45);transform:translateX(-50%) translateY(-2px)}
+#c2p-sidebar .c2p-scroll-bottom-btn.c2p-hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
+#c2p-sidebar .c2p-scroll-bottom-btn.c2p-has-unread{border-color:#e50914;background:rgba(229,9,20,.22);box-shadow:0 4px 16px rgba(229,9,20,.4)}
+#c2p-sidebar .c2p-scroll-bottom-btn svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.5;fill:none;flex-shrink:0}
 #c2p-sidebar .c2p-msg{max-width:85%;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
@@ -552,8 +562,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         <button class="c2p-btn-connect" id="c2p-connect-btn">Enter Lounge</button>
         <p class="c2p-setup-hint" id="c2p-setup-hint">Click to connect and wait for a peer.</p>
       </div>
-      <div class="c2p-messages" id="c2p-messages">
-        <div class="c2p-msg c2p-system">Welcome! Messages are sent securely over WebRTC.</div>
+      <div class="c2p-messages-wrap">
+        <div class="c2p-messages" id="c2p-messages">
+          <div class="c2p-msg c2p-system">Welcome! Messages are sent securely over WebRTC.</div>
+        </div>
+        <button id="c2p-scroll-bottom-btn" class="c2p-scroll-bottom-btn c2p-hidden" title="Scroll to bottom">
+          <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <span id="c2p-scroll-btn-text">Jump to bottom ↓</span>
+        </button>
       </div>
       <div id="c2p-typing-indicator" class="c2p-typing-indicator c2p-hidden">
         <span>Peer is typing</span>
@@ -910,6 +926,28 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       }
     });
 
+    const messagesEl = document.getElementById('c2p-messages');
+    if (messagesEl) {
+      messagesEl.addEventListener('scroll', () => {
+        const distFromBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+        userScrolledUp = distFromBottom > SCROLL_THRESHOLD;
+        if (!userScrolledUp) {
+          hasUnreadBelow = false;
+        }
+        updateScrollBottomBtn();
+      }, { passive: true });
+    }
+
+    const scrollBottomBtn = document.getElementById('c2p-scroll-bottom-btn');
+    if (scrollBottomBtn) {
+      scrollBottomBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        scrollToBottom(true);
+      });
+    }
+
+    sidebar.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+
     // Move sidebar inside fullscreen element so it doesn't turn black
     const handleFullscreen = () => {
       const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
@@ -922,23 +960,51 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           focusMsgInput();
         }
       }
-      scrollToBottom();
-      setTimeout(scrollToBottom, 60);
-      setTimeout(scrollToBottom, 250);
+      if (!userScrolledUp) {
+        scrollToBottom(false);
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreen);
     document.addEventListener('webkitfullscreenchange', handleFullscreen);
+    let lastWinWidth = window.innerWidth;
+    let lastWinHeight = window.innerHeight;
     window.addEventListener('resize', () => {
-      if (sidebarVisible) {
-        scrollToBottom();
-        setTimeout(scrollToBottom, 100);
+      if (!sidebarVisible) return;
+      const w = window.innerWidth, h = window.innerHeight;
+      if (w === lastWinWidth && h === lastWinHeight) return;
+      lastWinWidth = w;
+      lastWinHeight = h;
+      if (!userScrolledUp) {
+        scrollToBottom(false);
       }
     });
+  }
+
+  function updateScrollBottomBtn() {
+    const btn = document.getElementById('c2p-scroll-bottom-btn');
+    if (!btn) return;
+    if (userScrolledUp) {
+      btn.classList.remove('c2p-hidden');
+      if (hasUnreadBelow) {
+        btn.classList.add('c2p-has-unread');
+      } else {
+        btn.classList.remove('c2p-has-unread');
+      }
+      const txt = document.getElementById('c2p-scroll-btn-text');
+      if (txt) txt.textContent = hasUnreadBelow ? 'New messages ↓' : 'Jump to bottom ↓';
+    } else {
+      hasUnreadBelow = false;
+      btn.classList.add('c2p-hidden');
+      btn.classList.remove('c2p-has-unread');
+    }
   }
 
   function scrollToBottom(smooth = false) {
     const c = document.getElementById('c2p-messages');
     if (!c) return;
+    userScrolledUp = false;
+    hasUnreadBelow = false;
+    updateScrollBottomBtn();
     if (smooth) c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
     else c.scrollTop = c.scrollHeight;
   }
@@ -965,8 +1031,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       sidebar.classList.remove('c2p-hidden'); btn.classList.add('c2p-sidebar-open');
       document.body.classList.add('c2p-sidebar-active');
       focusMsgInput();
-      scrollToBottom();
-      setTimeout(scrollToBottom, 60);
+      if (!userScrolledUp) {
+        scrollToBottom(false);
+      }
       if (persist) {
         try { sessionStorage.setItem('c2p_sidebar_open', '1'); } catch(e){}
       }
@@ -1046,6 +1113,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       d.style.cssText = 'background:transparent;padding:0;border:none';
       const w = document.createElement('div'); w.classList.add('c2p-gif-wrap');
       const i = document.createElement('img'); i.src = content;
+      i.onload = () => { if (!userScrolledUp) scrollToBottom(true); };
       w.appendChild(i); d.appendChild(w);
     } else if (isImage) {
       d.style.cssText = 'background:transparent;padding:0;border:none';
@@ -1060,6 +1128,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       w.classList.add('c2p-image-wrap');
       const img = document.createElement('img');
       img.src = content;
+      img.onload = () => { if (!userScrolledUp) scrollToBottom(true); };
       img.alt = 'Pasted image';
       img.title = 'Click to open in new tab';
       img.addEventListener('click', () => {
@@ -1085,7 +1154,19 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     }
     appendMsg(d);
   }
-  function appendMsg(el) { const c = document.getElementById('c2p-messages'); if(c){c.appendChild(el); scrollToBottom(true);} }
+  function appendMsg(el) {
+    const c = document.getElementById('c2p-messages');
+    if (!c) return;
+    const isSentByMe = el.classList.contains('c2p-sent');
+    const wasNearBottom = !userScrolledUp;
+    c.appendChild(el);
+    if (isSentByMe || wasNearBottom) {
+      scrollToBottom(true);
+    } else {
+      hasUnreadBelow = true;
+      updateScrollBottomBtn();
+    }
+  }
   function setInputEnabled(on) {
     const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn'),n=document.getElementById('c2p-nudge-btn');
     if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on; if(n)n.disabled=!on || nudgeCooldown;
@@ -2101,7 +2182,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (!indicator) return;
     if (show) {
       indicator.classList.remove('c2p-hidden');
-      scrollToBottom(true);
+      if (!userScrolledUp) scrollToBottom(true);
       remoteTypingTimeout = setTimeout(() => {
         indicator.classList.add('c2p-hidden');
         remoteTypingTimeout = null;
