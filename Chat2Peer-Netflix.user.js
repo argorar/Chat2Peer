@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.9.1
+// @version      1.10.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -69,6 +69,11 @@
     { svg: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>', name: 'Claps', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b80daabd57.mp3' },
     { svg: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', name: 'Slap', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_367e863251.mp3' },
     { svg: '<path d="M3 6h5l-5 5h5M12 11h5l-5 5h5M17 17h4l-4 4h4"/>', name: 'Snore', url: 'https://cdn.pixabay.com/audio/2025/05/06/audio_47fc2577b3.mp3' }
+  ];
+  const SPECIAL_EFFECTS = [
+    { id: 'celebration', name: 'Celebration', icon: '🎉', title: 'Celebration (Confetti)' },
+    { id: 'fireworks', name: 'Fireworks', icon: '🎆', title: 'Fireworks' },
+    { id: 'tomato', name: 'Tomato Splat', icon: '🍅', title: 'Tomato Splat' }
   ];
 
   // ── Klipy GIF State ──
@@ -447,6 +452,19 @@
 #c2p-sidebar .c2p-nudge-btn:active:not(:disabled){transform:scale(.95)}
 #c2p-sidebar .c2p-nudge-btn:disabled{opacity:.3;cursor:not-allowed}
 #c2p-sidebar .c2p-nudge-btn svg{width:18px;height:18px}
+#c2p-sidebar .c2p-effects-wrapper{position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#c2p-sidebar .c2p-effects-menu{position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%) translateY(6px);background:rgba(22,22,22,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.7);padding:6px;min-width:145px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s cubic-bezier(.16,1,.3,1),transform .2s cubic-bezier(.16,1,.3,1),visibility .2s;transition-delay:0.12s;z-index:120;white-space:nowrap}
+#c2p-sidebar .c2p-effects-menu::after{content:'';position:absolute;top:100%;left:0;right:0;height:14px}
+#c2p-sidebar .c2p-effects-wrapper:hover .c2p-effects-menu,#c2p-sidebar .c2p-effects-wrapper:focus-within .c2p-effects-menu{opacity:1;visibility:visible;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+#c2p-sidebar .c2p-effects-wrapper.c2p-disabled .c2p-effects-menu{display:none !important}
+#c2p-sidebar .c2p-effects-menu-header{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;padding:4px 8px 6px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px}
+#c2p-sidebar .c2p-effects-list{display:flex;flex-direction:column;gap:3px}
+#c2p-sidebar .c2p-effect-item{display:flex;align-items:center;gap:8px;background:transparent;border:none;border-radius:8px;color:#e5e5e5;padding:7px 10px;font-size:12px;font-family:inherit;font-weight:500;cursor:pointer;transition:all .18s;width:100%;text-align:left}
+#c2p-sidebar .c2p-effect-item:hover:not(:disabled){background:rgba(255,255,255,.1);color:#fff;transform:translateX(2px)}
+#c2p-sidebar .c2p-effect-item:active:not(:disabled){transform:scale(.97)}
+#c2p-sidebar .c2p-effect-item:disabled{opacity:.35;cursor:not-allowed}
+#c2p-sidebar .c2p-effect-icon{font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center}
+#c2p-sidebar .c2p-effect-text{font-size:12px}
 #c2p-sidebar .c2p-recording-bar{display:none;align-items:center;gap:10px;flex:1;background:rgba(229,9,20,.12);border:1px solid rgba(229,9,20,.3);border-radius:99px;padding:4px 12px;color:#fff}
 #c2p-sidebar .c2p-record-dot{width:10px;height:10px;background:#e50914;border-radius:50%;animation:c2p-blink 1s infinite;flex-shrink:0}
 #c2p-sidebar .c2p-record-timer{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:#ff6b6b;flex:1}
@@ -598,15 +616,23 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           <button id="c2p-record-send-btn" class="c2p-record-btn c2p-record-send" title="Send Voice Note">✓</button>
         </div>
         <input type="text" id="c2p-msg-input" placeholder="Type a message..." disabled autocomplete="off">
-        <button class="c2p-nudge-btn" id="c2p-nudge-btn" disabled title="Send buzz">
-          <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 9a12 12 0 0 1 0 6"></path>
-            <path d="M5 6a16 16 0 0 1 0 12"></path>
-            <path d="M22 9a12 12 0 0 0 0 6"></path>
-            <path d="M19 6a16 16 0 0 0 0 12"></path>
-            <rect x="9" y="4" width="6" height="16" rx="2"></rect>
-          </svg>
-        </button>
+        <div class="c2p-effects-wrapper c2p-disabled" id="c2p-effects-wrapper">
+          <button class="c2p-nudge-btn" id="c2p-nudge-btn" disabled title="Send buzz" aria-label="Send buzz">
+            <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 9a12 12 0 0 1 0 6"></path>
+              <path d="M5 6a16 16 0 0 1 0 12"></path>
+              <path d="M22 9a12 12 0 0 0 0 6"></path>
+              <path d="M19 6a16 16 0 0 0 0 12"></path>
+              <rect x="9" y="4" width="6" height="16" rx="2"></rect>
+            </svg>
+          </button>
+          <div class="c2p-effects-menu" id="c2p-effects-menu">
+            <div class="c2p-effects-menu-header">Effects</div>
+            <div class="c2p-effects-list">
+              ${SPECIAL_EFFECTS.map(fx => `<button class="c2p-effect-item" data-effect="${fx.id}" title="${fx.title}" disabled><span class="c2p-effect-icon">${fx.icon}</span><span class="c2p-effect-text">${fx.name}</span></button>`).join('')}
+            </div>
+          </div>
+        </div>
         <button class="c2p-mic-btn" id="c2p-mic-btn" disabled title="Voice Note">
           <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -848,6 +874,18 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       nudgeBtn.addEventListener('mousedown', e => e.preventDefault());
       nudgeBtn.addEventListener('click', sendNudge);
     }
+    sidebar.querySelectorAll('.c2p-effect-item').forEach(btn => {
+      btn.addEventListener('mousedown', e => e.preventDefault());
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        sendEffect(btn.getAttribute('data-effect'));
+        const menu = document.getElementById('c2p-effects-menu');
+        if (menu) {
+          menu.style.display = 'none';
+          setTimeout(() => { if (menu) menu.style.display = ''; }, 300);
+        }
+      });
+    });
     document.getElementById('c2p-mic-btn').addEventListener('click', startRecording);
     document.getElementById('c2p-record-cancel-btn').addEventListener('click', cancelRecording);
     document.getElementById('c2p-record-send-btn').addEventListener('click', finishAndSendRecording);
@@ -960,6 +998,15 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           focusMsgInput();
         }
       }
+      if (confettiCanvas && confettiCanvas.parentElement !== target) {
+        target.appendChild(confettiCanvas);
+      }
+      if (fireworksCanvas && fireworksCanvas.parentElement !== target) {
+        target.appendChild(fireworksCanvas);
+      }
+      if (tomatoCanvas && tomatoCanvas.parentElement !== target) {
+        target.appendChild(tomatoCanvas);
+      }
       if (!userScrolledUp) {
         scrollToBottom(false);
       }
@@ -1068,7 +1115,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     play: '<polygon points="5 3 19 12 5 21 5 3"/>',
     pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
     seek: '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>',
-    audio: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'
+    audio: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+    party: '<polygon points="4 22 7.5 13.5 10.5 16.5 4 22"/><path d="M12 15l2-2"/><path d="M16 11l4-4"/><path d="M17 2l.5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><circle cx="10" cy="5" r="1"/><circle cx="5" cy="10" r="1"/>',
+    fireworks: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
+    tomato: '<circle cx="12" cy="13" r="8"/><path d="M12 5v3M9 6l3 2 3-2"/>'
   };
   function getSystemIconSvg(type) {
     const p = SYSTEM_ICONS[type];
@@ -1171,6 +1221,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn'),n=document.getElementById('c2p-nudge-btn');
     if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on; if(n)n.disabled=!on || nudgeCooldown;
     document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn, #c2p-sidebar .c2p-sfx-btn').forEach(b=>b.disabled=!on);
+    document.querySelectorAll('#c2p-sidebar .c2p-effect-item').forEach(b=>b.disabled=!on || effectCooldown);
+    const wrap = document.getElementById('c2p-effects-wrapper');
+    if (wrap) wrap.classList.toggle('c2p-disabled', !on);
   }
 
   // ── Sync & Netflix Player ──
@@ -1994,6 +2047,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         }
         else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true); }
         else if (d.type === 'nudge') { showRemoteTyping(false); handleIncomingNudge(); }
+        else if (d.type === 'effect') { showRemoteTyping(false); handleIncomingEffect(d.name); }
         else if (d.type === 'audio_chunk') {
           showRemoteTyping(false);
           if (!incomingAudioChunks[d.id]) {
@@ -2319,6 +2373,609 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (!sidebarVisible) toggleSidebar();
     triggerNudgeEffect();
     displaySystemMessage('Peer sent you a buzz!', 'bell');
+  }
+
+  // ── Special Effects (Celebration / Fireworks / Tomato, etc.) ──
+  const CELEBRATION_AUDIO = 'https://cdn.pixabay.com/audio/2024/07/24/audio_0e85d003fb.mp3';
+  const FIREWORKS_AUDIO = 'https://cdn.pixabay.com/audio/2025/10/12/audio_c4109f7a7d.mp3';
+  const TOMATO_AUDIO = 'https://cdn.pixabay.com/audio/2026/07/14/audio_3b46788a73.mp3';
+  let effectCooldown = false;
+  let confettiAnimId = null;
+  let confettiCanvas = null;
+  let fireworksAnimId = null;
+  let fireworksCanvas = null;
+  let tomatoAnimId = null;
+  let tomatoCanvas = null;
+
+  function playCelebrationSound() {
+    try {
+      const a = new Audio(CELEBRATION_AUDIO);
+      a.volume = 0.85;
+      a.play().catch(() => {});
+    } catch(e) {}
+  }
+
+  function playFireworksSound() {
+    try {
+      const a = new Audio(FIREWORKS_AUDIO);
+      a.volume = 0.85;
+      a.play().catch(() => {});
+    } catch(e) {}
+  }
+
+  function playTomatoSound() {
+    try {
+      const a = new Audio(TOMATO_AUDIO);
+      a.volume = 0.9;
+      a.play().catch(() => {});
+    } catch(e) {}
+  }
+
+  function getEffectContainer() {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    return (fs && fs.tagName !== 'VIDEO') ? fs : document.body;
+  }
+
+  function triggerCelebrationEffect() {
+    playCelebrationSound();
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!confettiCanvas) {
+      confettiCanvas = document.createElement('canvas');
+      confettiCanvas.className = 'c2p-confetti-canvas';
+      confettiCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(confettiCanvas);
+    } else if (confettiCanvas.parentElement !== container) {
+      container.appendChild(confettiCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    confettiCanvas.width = Math.floor(w * dpr);
+    confettiCanvas.height = Math.floor(h * dpr);
+    const ctx = confettiCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    const CONFETTI_COLORS = [
+      { light: '#e50914', dark: '#b20710' },
+      { light: '#ff3366', dark: '#d90429' },
+      { light: '#ffd166', dark: '#e09f3e' },
+      { light: '#ffb703', dark: '#fb8500' },
+      { light: '#06d6a0', dark: '#049669' },
+      { light: '#118ab2', dark: '#073b4c' },
+      { light: '#8338ec', dark: '#5a189a' },
+      { light: '#ff70a6', dark: '#d63384' },
+      { light: '#f8f9fa', dark: '#ced4da' }
+    ];
+
+    const particleCount = 140;
+    const particles = [];
+    for (let i = 0; i < particleCount; i++) {
+      const col = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      particles.push({
+        x: Math.random() * w,
+        y: -20 - Math.random() * (h * 0.45),
+        size: Math.random() * 5 + 6,
+        length: Math.random() * 8 + 8,
+        shape: Math.random() > 0.22 ? 'rect' : 'circle',
+        color: col.light,
+        darkColor: col.dark,
+        vy: Math.random() * 2.8 + 2.4,
+        vx: (Math.random() - 0.5) * 1.8,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: Math.random() * 0.07 + 0.03,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.08,
+        tilt: Math.random() * Math.PI * 2,
+        tiltSpeed: Math.random() * 0.08 + 0.04
+      });
+    }
+
+    if (confettiAnimId) cancelAnimationFrame(confettiAnimId);
+
+    const startTime = performance.now();
+    const spawnDuration = 2400;
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      let activeParticles = 0;
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+
+        p.wobble += p.wobbleSpeed;
+        p.tilt += p.tiltSpeed;
+        p.rotation += p.rotationSpeed;
+        p.x += p.vx + Math.sin(p.wobble) * 1.2;
+        p.y += p.vy;
+
+        if (p.y > h + 20) {
+          if (elapsed < spawnDuration) {
+            p.y = -20 - Math.random() * 40;
+            p.x = Math.random() * w;
+            p.vy = Math.random() * 2.8 + 2.4;
+            p.vx = (Math.random() - 0.5) * 1.8;
+            activeParticles++;
+          }
+          continue;
+        }
+
+        activeParticles++;
+
+        const cosTilt = Math.cos(p.tilt);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.scale(cosTilt, 1);
+        ctx.fillStyle = cosTilt > 0 ? p.color : p.darkColor;
+
+        if (p.shape === 'circle') {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-p.size / 2, -p.length / 2, p.size, p.length);
+        }
+        ctx.restore();
+      }
+
+      if (activeParticles > 0 && elapsed < 6500) {
+        confettiAnimId = requestAnimationFrame(animate);
+      } else {
+        if (confettiCanvas) {
+          confettiCanvas.remove();
+          confettiCanvas = null;
+        }
+        confettiAnimId = null;
+      }
+    }
+
+    confettiAnimId = requestAnimationFrame(animate);
+  }
+
+  function startEffectCooldown() {
+    effectCooldown = true;
+    const effectBtns = document.querySelectorAll('#c2p-sidebar .c2p-effect-item');
+    effectBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.4'; });
+    setTimeout(() => {
+      effectCooldown = false;
+      if (dataChannel?.readyState === 'open') {
+        effectBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+      }
+    }, 4000);
+  }
+
+  function triggerFireworksEffect() {
+    playFireworksSound();
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!fireworksCanvas) {
+      fireworksCanvas = document.createElement('canvas');
+      fireworksCanvas.className = 'c2p-fireworks-canvas';
+      fireworksCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(fireworksCanvas);
+    } else if (fireworksCanvas.parentElement !== container) {
+      container.appendChild(fireworksCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    fireworksCanvas.width = Math.floor(w * dpr);
+    fireworksCanvas.height = Math.floor(h * dpr);
+    const ctx = fireworksCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    const PALETTES = [
+      ['#ff0055', '#ff5577', '#ff99bb', '#ffffff'],
+      ['#ffd700', '#ffea75', '#ffaa00', '#ffffff'],
+      ['#00e5ff', '#0099ff', '#70d6ff', '#ffffff'],
+      ['#00ff88', '#55ff99', '#aaffcc', '#ffffff'],
+      ['#b5179e', '#7209b7', '#f72585', '#ffffff'],
+      ['#ff4500', '#ff8c00', '#ffd700', '#ffffff']
+    ];
+
+    const rockets = [
+      { delay: 0,    x: 0.25 * w, targetY: 0.28 * h },
+      { delay: 120,  x: 0.75 * w, targetY: 0.24 * h },
+      { delay: 350,  x: 0.50 * w, targetY: 0.36 * h },
+      { delay: 580,  x: 0.18 * w, targetY: 0.22 * h },
+      { delay: 820,  x: 0.82 * w, targetY: 0.32 * h },
+      { delay: 1050, x: 0.35 * w, targetY: 0.18 * h },
+      { delay: 1250, x: 0.65 * w, targetY: 0.26 * h },
+      { delay: 1500, x: 0.22 * w, targetY: 0.38 * h },
+      { delay: 1700, x: 0.78 * w, targetY: 0.20 * h },
+      { delay: 1950, x: 0.42 * w, targetY: 0.30 * h },
+      { delay: 2150, x: 0.58 * w, targetY: 0.22 * h },
+      { delay: 2400, x: 0.30 * w, targetY: 0.16 * h },
+      { delay: 2450, x: 0.70 * w, targetY: 0.18 * h }
+    ].map(r => ({
+      delay: r.delay,
+      x: r.x + (Math.random() - 0.5) * 30,
+      y: h + 10,
+      targetY: r.targetY + (Math.random() - 0.5) * 20,
+      speed: (h - r.targetY) / 30,
+      trail: [],
+      exploded: false,
+      palette: PALETTES[Math.floor(Math.random() * PALETTES.length)]
+    }));
+
+    const particles = [];
+
+    function createExplosion(x, y, palette) {
+      const count = 110;
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 6.5 + 1.8;
+        particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          color: palette[Math.floor(Math.random() * palette.length)],
+          alpha: 1,
+          decay: Math.random() * 0.015 + 0.010,
+          size: Math.random() * 2.5 + 2.8,
+          trail: [[x, y]]
+        });
+      }
+    }
+
+    if (fireworksAnimId) cancelAnimationFrame(fireworksAnimId);
+    const startTime = performance.now();
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      for (let i = 0; i < rockets.length; i++) {
+        const r = rockets[i];
+        if (elapsed < r.delay || r.exploded) continue;
+
+        r.trail.push([r.x, r.y]);
+        if (r.trail.length > 5) r.trail.shift();
+
+        r.y -= r.speed;
+
+        ctx.save();
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 3.2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        if (r.trail.length > 1) {
+          ctx.moveTo(r.trail[0][0], r.trail[0][1]);
+          for (let t = 1; t < r.trail.length; t++) {
+            ctx.lineTo(r.trail[t][0], r.trail[t][1]);
+          }
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff5cc';
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (r.y <= r.targetY) {
+          r.exploded = true;
+          createExplosion(r.x, r.y, r.palette);
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.trail.push([p.x, p.y]);
+        if (p.trail.length > 4) p.trail.shift();
+
+        p.vx *= 0.96;
+        p.vy = p.vy * 0.96 + 0.06;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.decay;
+
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.strokeStyle = p.color;
+        ctx.fillStyle = p.color;
+        ctx.lineWidth = p.size;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        if (p.trail.length > 1) {
+          ctx.moveTo(p.trail[0][0], p.trail[0][1]);
+          for (let t = 1; t < p.trail.length; t++) {
+            ctx.lineTo(p.trail[t][0], p.trail[t][1]);
+          }
+        }
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size / 1.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      const allRocketsExploded = rockets.every(r => r.exploded);
+      if ((!allRocketsExploded || particles.length > 0) && elapsed < 6500) {
+        fireworksAnimId = requestAnimationFrame(animate);
+      } else {
+        if (fireworksCanvas) {
+          fireworksCanvas.remove();
+          fireworksCanvas = null;
+        }
+        fireworksAnimId = null;
+      }
+    }
+
+    fireworksAnimId = requestAnimationFrame(animate);
+  }
+
+  function triggerTomatoEffect() {
+    playTomatoSound();
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!tomatoCanvas) {
+      tomatoCanvas = document.createElement('canvas');
+      tomatoCanvas.className = 'c2p-tomato-canvas';
+      tomatoCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(tomatoCanvas);
+    } else if (tomatoCanvas.parentElement !== container) {
+      container.appendChild(tomatoCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    tomatoCanvas.width = Math.floor(w * dpr);
+    tomatoCanvas.height = Math.floor(h * dpr);
+    const ctx = tomatoCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    const targetX = w * (0.42 + Math.random() * 0.16);
+    const targetY = h * (0.36 + Math.random() * 0.18);
+    const startX = targetX + (Math.random() - 0.5) * 120;
+    const startY = h + 60;
+    const flyDuration = 260; // ms
+
+    const lobeCount = 14;
+    const baseRadius = Math.min(w, h) * 0.075 + 25;
+    const lobes = [];
+    for (let i = 0; i < lobeCount; i++) {
+      const angle = (i / lobeCount) * Math.PI * 2;
+      const variance = (Math.random() * 0.5 + 0.75);
+      lobes.push({
+        angle,
+        radius: baseRadius * variance
+      });
+    }
+
+    const dripCount = 5;
+    const drips = [];
+    for (let i = 0; i < dripCount; i++) {
+      const offsetAngle = Math.PI * 0.2 + (i / (dripCount - 1)) * Math.PI * 0.6;
+      const originX = Math.cos(offsetAngle) * (baseRadius * 0.75);
+      const originY = Math.sin(offsetAngle) * (baseRadius * 0.75);
+      drips.push({
+        x: originX,
+        y: originY,
+        length: 0,
+        maxLength: Math.random() * 80 + 40,
+        width: Math.random() * 4 + 3,
+        speed: Math.random() * 0.6 + 0.35
+      });
+    }
+
+    const dropletCount = 28;
+    const droplets = [];
+    for (let i = 0; i < dropletCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 7 + 2.5;
+      droplets.push({
+        x: targetX,
+        y: targetY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: Math.random() * 4 + 2,
+        drip: 0,
+        dripSpeed: Math.random() * 0.25 + 0.1
+      });
+    }
+
+    if (tomatoAnimId) cancelAnimationFrame(tomatoAnimId);
+    const startTime = performance.now();
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      if (elapsed < flyDuration) {
+        const progress = elapsed / flyDuration;
+        const ease = progress * progress;
+        const curX = startX + (targetX - startX) * ease;
+        const curY = startY + (targetY - startY) * ease;
+        const scale = 0.25 + progress * 0.75;
+        const radius = 28 * scale;
+
+        ctx.save();
+        ctx.translate(curX, curY);
+        ctx.rotate(progress * 4);
+
+        const grad = ctx.createRadialGradient(-radius * 0.3, -radius * 0.3, radius * 0.1, 0, 0, radius);
+        grad.addColorStop(0, '#ff4d4d');
+        grad.addColorStop(0.7, '#d61a1a');
+        grad.addColorStop(1, '#8f0000');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#2e7d32';
+        ctx.beginPath();
+        ctx.arc(0, -radius * 0.85, radius * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+        tomatoAnimId = requestAnimationFrame(animate);
+      } else {
+        const splatElapsed = elapsed - flyDuration;
+        let alpha = 1;
+        if (splatElapsed > 3200) {
+          alpha = Math.max(0, 1 - (splatElapsed - 3200) / 1200);
+        }
+
+        if (alpha <= 0 || elapsed > 5500) {
+          if (tomatoCanvas) {
+            tomatoCanvas.remove();
+            tomatoCanvas = null;
+          }
+          tomatoAnimId = null;
+          return;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        for (let i = 0; i < droplets.length; i++) {
+          const d = droplets[i];
+          d.vx *= 0.88;
+          d.vy *= 0.88;
+          d.x += d.vx;
+          d.y += d.vy + d.drip;
+          d.drip += d.dripSpeed * 0.05;
+
+          ctx.fillStyle = '#cc1818';
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.translate(targetX, targetY);
+
+        ctx.fillStyle = '#b31212';
+        for (let i = 0; i < drips.length; i++) {
+          const dr = drips[i];
+          if (dr.length < dr.maxLength) {
+            dr.length += dr.speed;
+          }
+          ctx.beginPath();
+          ctx.arc(dr.x, dr.y + dr.length, dr.width * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.rect(dr.x - dr.width / 2, dr.y, dr.width, dr.length);
+          ctx.fill();
+        }
+
+        ctx.beginPath();
+        const first = lobes[0];
+        ctx.moveTo(Math.cos(first.angle) * first.radius, Math.sin(first.angle) * first.radius);
+        for (let i = 1; i <= lobeCount; i++) {
+          const prev = lobes[(i - 1) % lobeCount];
+          const curr = lobes[i % lobeCount];
+          const cpAngle = (prev.angle + curr.angle) / 2;
+          const cpRadius = (prev.radius + curr.radius) * 0.55;
+          ctx.quadraticCurveTo(
+            Math.cos(cpAngle) * cpRadius,
+            Math.sin(cpAngle) * cpRadius,
+            Math.cos(curr.angle) * curr.radius,
+            Math.sin(curr.angle) * curr.radius
+          );
+        }
+        ctx.closePath();
+
+        const splatGrad = ctx.createRadialGradient(0, 0, baseRadius * 0.2, 0, 0, baseRadius * 1.1);
+        splatGrad.addColorStop(0, '#e52222');
+        splatGrad.addColorStop(0.65, '#b81414');
+        splatGrad.addColorStop(1, '#780505');
+        ctx.fillStyle = splatGrad;
+        ctx.fill();
+
+        ctx.fillStyle = '#6b0000';
+        for (let s = 0; s < 7; s++) {
+          const sa = (s / 7) * Math.PI * 2;
+          const sr = baseRadius * 0.45;
+          ctx.beginPath();
+          ctx.arc(Math.cos(sa) * sr, Math.sin(sa) * sr, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(-baseRadius * 0.25, -baseRadius * 0.25, baseRadius * 0.4, Math.PI * 0.8, Math.PI * 1.4);
+        ctx.stroke();
+
+        ctx.fillStyle = '#2e7d32';
+        ctx.beginPath();
+        for (let p = 0; p < 5; p++) {
+          const pa = (p / 5) * Math.PI * 2 - Math.PI / 2;
+          const outerR = baseRadius * 0.32;
+          const innerR = baseRadius * 0.12;
+          ctx.lineTo(Math.cos(pa) * outerR, Math.sin(pa) * outerR);
+          ctx.lineTo(Math.cos(pa + Math.PI / 5) * innerR, Math.sin(pa + Math.PI / 5) * innerR);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+        tomatoAnimId = requestAnimationFrame(animate);
+      }
+    }
+
+    tomatoAnimId = requestAnimationFrame(animate);
+  }
+
+  function sendEffect(effectId) {
+    if (effectCooldown) {
+      displaySystemMessage('Wait to send another effect.', 'clock');
+      return;
+    }
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+
+    if (effectId === 'celebration') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'celebration' }));
+      triggerCelebrationEffect();
+      displaySystemMessage('You sent a celebration.', 'party');
+      startEffectCooldown();
+    } else if (effectId === 'fireworks') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'fireworks' }));
+      triggerFireworksEffect();
+      displaySystemMessage('You sent fireworks.', 'fireworks');
+      startEffectCooldown();
+    } else if (effectId === 'tomato') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'tomato' }));
+      triggerTomatoEffect();
+      displaySystemMessage('You sent a tomato splat.', 'tomato');
+      startEffectCooldown();
+    }
+  }
+
+  function handleIncomingEffect(effectName) {
+    if (!sidebarVisible) toggleSidebar();
+    if (effectName === 'celebration') {
+      triggerCelebrationEffect();
+      displaySystemMessage('Peer sent you a celebration!', 'party');
+    } else if (effectName === 'fireworks') {
+      triggerFireworksEffect();
+      displaySystemMessage('Peer sent you fireworks!', 'fireworks');
+    } else if (effectName === 'tomato') {
+      triggerTomatoEffect();
+      displaySystemMessage('Peer sent you a tomato splat!', 'tomato');
+    }
   }
 
   // ── Voice Notes ──
