@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.10.0
+// @version      1.10.1
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -73,7 +73,8 @@
   const SPECIAL_EFFECTS = [
     { id: 'celebration', name: 'Celebration', icon: '🎉', title: 'Celebration (Confetti)' },
     { id: 'fireworks', name: 'Fireworks', icon: '🎆', title: 'Fireworks' },
-    { id: 'tomato', name: 'Tomato Splat', icon: '🍅', title: 'Tomato Splat' }
+    { id: 'tomato', name: 'Tomato Splat', icon: '🍅', title: 'Tomato Splat' },
+    { id: 'dance', name: 'Dance', icon: '🕺', title: 'Disco Dance' }
   ];
 
   // ── Klipy GIF State ──
@@ -1007,6 +1008,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       if (tomatoCanvas && tomatoCanvas.parentElement !== target) {
         target.appendChild(tomatoCanvas);
       }
+      if (danceCanvas && danceCanvas.parentElement !== target) {
+        target.appendChild(danceCanvas);
+      }
       if (!userScrolledUp) {
         scrollToBottom(false);
       }
@@ -1118,7 +1122,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     audio: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     party: '<polygon points="4 22 7.5 13.5 10.5 16.5 4 22"/><path d="M12 15l2-2"/><path d="M16 11l4-4"/><path d="M17 2l.5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><circle cx="10" cy="5" r="1"/><circle cx="5" cy="10" r="1"/>',
     fireworks: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
-    tomato: '<circle cx="12" cy="13" r="8"/><path d="M12 5v3M9 6l3 2 3-2"/>'
+    tomato: '<circle cx="12" cy="13" r="8"/><path d="M12 5v3M9 6l3 2 3-2"/>',
+    dance: '<circle cx="12" cy="4" r="2"/><path d="M9 22l3-9 3 9M6 13l6-3 6 3"/>'
   };
   function getSystemIconSvg(type) {
     const p = SYSTEM_ICONS[type];
@@ -2386,6 +2391,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   let fireworksCanvas = null;
   let tomatoAnimId = null;
   let tomatoCanvas = null;
+  let danceAnimId = null;
+  let danceCanvas = null;
 
   function playCelebrationSound() {
     try {
@@ -2939,6 +2946,486 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     tomatoAnimId = requestAnimationFrame(animate);
   }
 
+  function triggerDanceEffect() {
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!danceCanvas) {
+      danceCanvas = document.createElement('canvas');
+      danceCanvas.className = 'c2p-dance-canvas';
+      danceCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(danceCanvas);
+    } else if (danceCanvas.parentElement !== container) {
+      container.appendChild(danceCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    danceCanvas.width = Math.floor(w * dpr);
+    danceCanvas.height = Math.floor(h * dpr);
+    const ctx = danceCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    const scale = Math.min(w, h) * 0.0017;
+    const baseY = h * 0.82;
+    const sparks = [];
+
+    // Tapered anatomical limb segment (rounded capsule)
+    function drawSegment(x1, y1, x2, y2, r1, r2) {
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const perp = angle + Math.PI / 2;
+      const dx1 = Math.cos(perp) * r1;
+      const dy1 = Math.sin(perp) * r1;
+      const dx2 = Math.cos(perp) * r2;
+      const dy2 = Math.sin(perp) * r2;
+
+      ctx.beginPath();
+      ctx.arc(x1, y1, r1, perp, perp + Math.PI);
+      ctx.lineTo(x2 - dx2, y2 - dy2);
+      ctx.arc(x2, y2, r2, perp + Math.PI, perp);
+      ctx.lineTo(x1 + dx1, y1 + dy1);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 70s Disco Bell-bottom pant leg with flared hem
+    function drawBellBottom(kx, ky, ax, ay, kr, ar) {
+      const angle = Math.atan2(ay - ky, ax - kx);
+      const perp = angle + Math.PI / 2;
+      const dx1 = Math.cos(perp) * kr;
+      const dy1 = Math.sin(perp) * kr;
+      const dx2 = Math.cos(perp) * ar;
+      const dy2 = Math.sin(perp) * ar;
+
+      ctx.beginPath();
+      ctx.moveTo(kx - dx1, ky - dy1);
+      ctx.quadraticCurveTo((kx + ax) / 2 - dx1 * 0.65, (ky + ay) / 2 - dy1 * 0.65, ax - dx2, ay - dy2);
+      ctx.quadraticCurveTo(ax, ay + ar * 0.25, ax + dx2, ay + dy2);
+      ctx.quadraticCurveTo((kx + ax) / 2 + dx1 * 0.65, (ky + ay) / 2 + dy1 * 0.65, kx + dx1, ky + dy1);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function emitSpark(x, y, color) {
+      if (sparks.length > 50) return;
+      sparks.push({
+        x: x + (Math.random() - 0.5) * 8,
+        y: y + (Math.random() - 0.5) * 8,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: -Math.random() * 2 - 0.5,
+        alpha: 1,
+        size: Math.random() * 3 + 2,
+        color
+      });
+    }
+
+    function drawMan(cx, cy, beat, phrase) {
+      const hipSway = Math.sin(beat * Math.PI * 0.5) * 14 * scale;
+      const bounce = Math.abs(Math.sin(beat * Math.PI)) * 12 * scale;
+      const rootX = cx + hipSway * 0.4;
+      const rootY = cy - bounce;
+
+      // Contact shadow
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(cx + hipSway * 0.2, baseY + 6 * scale, 45 * scale, 10 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = 8 * scale;
+
+      const manSkin = '#e8b28a';
+      const manHair = '#141419';
+      const manShirt = '#e50914';
+      const manPants = '#f8fafc';
+      const manShoes = '#111116';
+
+      const hipX = rootX;
+      const hipY = rootY - 75 * scale;
+      const chestX = rootX + hipSway * 0.4;
+      const chestY = hipY - 55 * scale;
+
+      // Legs & Bell-Bottoms (Pants)
+      const lHip = hipX - 12 * scale;
+      const rHip = hipX + 12 * scale;
+
+      const lKneeSwing = Math.sin(beat * Math.PI) * 0.25;
+      const rKneeSwing = -Math.sin(beat * Math.PI) * 0.25;
+
+      const lKneeX = lHip - 8 * scale + Math.sin(lKneeSwing) * 30 * scale;
+      const lKneeY = hipY + 42 * scale;
+      const rKneeX = rHip + 8 * scale + Math.sin(rKneeSwing) * 30 * scale;
+      const rKneeY = hipY + 42 * scale;
+
+      const lAnkleX = lKneeX - 4 * scale;
+      const lAnkleY = baseY;
+      const rAnkleX = rKneeX + 6 * scale;
+      const rAnkleY = baseY - bounce * 0.3;
+
+      // Pants (Thighs & Bell-Bottom Calves)
+      ctx.fillStyle = manPants;
+      drawSegment(lHip, hipY, lKneeX, lKneeY, 13 * scale, 10 * scale);
+      drawSegment(rHip, hipY, rKneeX, rKneeY, 13 * scale, 10 * scale);
+      drawBellBottom(lKneeX, lKneeY, lAnkleX, lAnkleY, 10 * scale, 22 * scale);
+      drawBellBottom(rKneeX, rKneeY, rAnkleX, rAnkleY, 10 * scale, 22 * scale);
+
+      // Platform Shoes
+      ctx.fillStyle = manShoes;
+      ctx.beginPath();
+      ctx.ellipse(lAnkleX + 4 * scale, lAnkleY + 4 * scale, 14 * scale, 6 * scale, -0.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(rAnkleX + 6 * scale, rAnkleY + 4 * scale, 14 * scale, 6 * scale, 0.1, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Shirt / Torso
+      ctx.fillStyle = manShirt;
+      ctx.beginPath();
+      ctx.moveTo(chestX - 22 * scale, chestY);
+      ctx.lineTo(chestX + 22 * scale, chestY);
+      ctx.lineTo(hipX + 16 * scale, hipY);
+      ctx.lineTo(hipX - 16 * scale, hipY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Open chest / collar cut accent showing skin
+      ctx.fillStyle = manSkin;
+      ctx.beginPath();
+      ctx.moveTo(chestX - 8 * scale, chestY);
+      ctx.lineTo(chestX + 8 * scale, chestY);
+      ctx.lineTo(chestX, chestY + 24 * scale);
+      ctx.closePath();
+      ctx.fill();
+
+      // Head & Black Hair
+      const headX = chestX + hipSway * 0.2;
+      const headY = chestY - 26 * scale;
+      const headR = 14 * scale;
+
+      // Neck (Skin)
+      ctx.fillStyle = manSkin;
+      drawSegment(chestX, chestY, headX, headY, 6 * scale, 6 * scale);
+
+      // Face silhouette (Skin)
+      ctx.beginPath();
+      ctx.arc(headX, headY, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 70s Feathered Hair (Black)
+      ctx.fillStyle = manHair;
+      ctx.beginPath();
+      ctx.arc(headX, headY - 3 * scale, headR * 1.2, Math.PI * 0.85, Math.PI * 2.15);
+      ctx.quadraticCurveTo(headX + headR * 1.35, headY + headR * 0.45, headX + headR * 0.85, headY + 2 * scale);
+      ctx.quadraticCurveTo(headX, headY - headR * 0.3, headX - headR * 0.85, headY + 2 * scale);
+      ctx.quadraticCurveTo(headX - headR * 1.35, headY + headR * 0.45, headX - headR * 1.15, headY - 2 * scale);
+      ctx.closePath();
+      ctx.fill();
+
+      // Arms: Poses depend on phrase
+      const lShoulderX = chestX - 22 * scale;
+      const lShoulderY = chestY + 4 * scale;
+      const rShoulderX = chestX + 22 * scale;
+      const rShoulderY = chestY + 4 * scale;
+
+      let rElbowX, rElbowY, rHandX, rHandY;
+      let lElbowX, lElbowY, lHandX, lHandY;
+
+      if (phrase < 4) {
+        // Move 1: Saturday Night Fever Iconic Disco Sky Point!
+        const pointStep = phrase % 2;
+        const isHigh = pointStep < 1.25;
+        const rArmTargetAngle = isHigh ? -Math.PI * 0.38 : Math.PI * 0.22;
+
+        rElbowX = rShoulderX + Math.cos(rArmTargetAngle) * 32 * scale;
+        rElbowY = rShoulderY + Math.sin(rArmTargetAngle) * 32 * scale;
+        rHandX = rElbowX + Math.cos(rArmTargetAngle) * 34 * scale;
+        rHandY = rElbowY + Math.sin(rArmTargetAngle) * 34 * scale;
+
+        // Left hand on hip
+        lElbowX = lShoulderX - 22 * scale;
+        lElbowY = lShoulderY + 24 * scale;
+        lHandX = hipX - 16 * scale;
+        lHandY = hipY;
+
+        if (isHigh) emitSpark(rHandX, rHandY, '#ffdd55');
+      } else {
+        // Move 2: Funky Disco Hand Roll
+        const rollAngle = beat * Math.PI * 2;
+        const rollCenterY = chestY + 16 * scale;
+
+        rElbowX = rShoulderX + 16 * scale;
+        rElbowY = chestY + 20 * scale;
+        rHandX = chestX + Math.cos(rollAngle) * 16 * scale;
+        rHandY = rollCenterY + Math.sin(rollAngle) * 14 * scale;
+
+        lElbowX = lShoulderX - 16 * scale;
+        lElbowY = chestY + 20 * scale;
+        lHandX = chestX + Math.cos(rollAngle + Math.PI) * 16 * scale;
+        lHandY = rollCenterY + Math.sin(rollAngle + Math.PI) * 14 * scale;
+
+        emitSpark(rHandX, rHandY, '#ffdd55');
+      }
+
+      // Shirt sleeves on arms
+      ctx.fillStyle = manShirt;
+      drawSegment(lShoulderX, lShoulderY, lElbowX, lElbowY, 9 * scale, 7 * scale);
+      drawSegment(lElbowX, lElbowY, lHandX, lHandY, 7 * scale, 5 * scale);
+      drawSegment(rShoulderX, rShoulderY, rElbowX, rElbowY, 9 * scale, 7 * scale);
+      drawSegment(rElbowX, rElbowY, rHandX, rHandY, 7 * scale, 5 * scale);
+
+      // Hands (Skin)
+      ctx.fillStyle = manSkin;
+      ctx.beginPath();
+      ctx.arc(rHandX, rHandY, 6 * scale, 0, Math.PI * 2);
+      ctx.arc(lHandX, lHandY, 6 * scale, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawWoman(cx, cy, beat, phrase) {
+      const hipSway = -Math.sin(beat * Math.PI * 0.5) * 16 * scale;
+      const bounce = Math.abs(Math.sin((beat + 0.5) * Math.PI)) * 12 * scale;
+      const rootX = cx + hipSway * 0.5;
+      const rootY = cy - bounce;
+
+      // Contact shadow
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(cx + hipSway * 0.3, baseY + 6 * scale, 40 * scale, 9 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = 8 * scale;
+
+      const womanSkin = '#fcd0a1';
+      const womanHair = '#563217';
+      const womanHairDark = '#43240f';
+      const womanDressGrad = ctx.createLinearGradient(rootX - 40 * scale, rootY - 120 * scale, rootX + 40 * scale, rootY);
+      womanDressGrad.addColorStop(0, '#ffb703');
+      womanDressGrad.addColorStop(1, '#fb8500');
+      const womanHeels = '#d90429';
+
+      const hipX = rootX;
+      const hipY = rootY - 75 * scale;
+      const waistX = rootX + hipSway * 0.3;
+      const waistY = hipY - 26 * scale;
+      const chestX = rootX + hipSway * 0.6;
+      const chestY = waistY - 26 * scale;
+
+      // Legs (Skin)
+      const lHip = hipX - 10 * scale;
+      const rHip = hipX + 10 * scale;
+
+      const lLegPhase = Math.sin((beat + 0.5) * Math.PI) * 0.3;
+      const rLegPhase = -Math.sin((beat + 0.5) * Math.PI) * 0.3;
+
+      const lKneeX = lHip - 4 * scale + Math.sin(lLegPhase) * 26 * scale;
+      const lKneeY = hipY + 40 * scale;
+      const rKneeX = rHip + 4 * scale + Math.sin(rLegPhase) * 26 * scale;
+      const rKneeY = hipY + 40 * scale;
+
+      const lAnkleX = lKneeX - 3 * scale;
+      const lAnkleY = baseY - bounce * 0.2;
+      const rAnkleX = rKneeX + 5 * scale;
+      const rAnkleY = baseY;
+
+      // Slender legs (Skin)
+      ctx.fillStyle = womanSkin;
+      drawSegment(lHip, hipY, lKneeX, lKneeY, 10 * scale, 8 * scale);
+      drawSegment(rHip, hipY, rKneeX, rKneeY, 10 * scale, 8 * scale);
+      drawSegment(lKneeX, lKneeY, lAnkleX, lAnkleY, 8 * scale, 5 * scale);
+      drawSegment(rKneeX, rKneeY, rAnkleX, rAnkleY, 8 * scale, 5 * scale);
+
+      // Dancing High Heels
+      ctx.fillStyle = womanHeels;
+      ctx.beginPath();
+      ctx.ellipse(lAnkleX + 3 * scale, lAnkleY + 3 * scale, 10 * scale, 4 * scale, 0.1, 0, Math.PI * 2);
+      ctx.ellipse(rAnkleX + 4 * scale, rAnkleY + 3 * scale, 10 * scale, 4 * scale, -0.1, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Flowing Disco Dress
+      ctx.fillStyle = womanDressGrad;
+      const skirtLag = Math.sin((beat - 0.2) * Math.PI) * 14 * scale;
+      ctx.beginPath();
+      ctx.moveTo(waistX - 12 * scale, waistY);
+      ctx.lineTo(waistX + 12 * scale, waistY);
+      ctx.quadraticCurveTo(hipX + 28 * scale + skirtLag, hipY + 18 * scale, hipX + 32 * scale + skirtLag, hipY + 38 * scale);
+      ctx.quadraticCurveTo(hipX + skirtLag, hipY + 44 * scale, hipX - 32 * scale + skirtLag, hipY + 38 * scale);
+      ctx.quadraticCurveTo(hipX - 28 * scale + skirtLag, hipY + 18 * scale, waistX - 12 * scale, waistY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Fitted Bodice
+      ctx.beginPath();
+      ctx.moveTo(chestX - 16 * scale, chestY);
+      ctx.lineTo(chestX + 16 * scale, chestY);
+      ctx.lineTo(waistX + 12 * scale, waistY);
+      ctx.lineTo(waistX - 12 * scale, waistY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Head & Long Flowing Hair (Chestnut brown / castaño)
+      const headX = chestX + hipSway * 0.2;
+      const headY = chestY - 24 * scale;
+      const headR = 12 * scale;
+
+      // Long Hair (Back layer with inertia lag)
+      const hairLag = Math.sin((beat - 0.3) * Math.PI * 0.5) * 16 * scale;
+      ctx.fillStyle = womanHairDark;
+      ctx.beginPath();
+      ctx.arc(headX, headY - 2 * scale, headR * 1.3, Math.PI * 0.9, Math.PI * 2.1);
+      ctx.quadraticCurveTo(headX + headR * 1.6 + hairLag, headY + 30 * scale, headX + headR * 0.6 + hairLag, headY + 55 * scale);
+      ctx.quadraticCurveTo(headX - headR * 0.5 + hairLag, headY + 35 * scale, headX - headR * 1.2, headY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Neck (Skin)
+      ctx.fillStyle = womanSkin;
+      drawSegment(chestX, chestY, headX, headY, 5 * scale, 5 * scale);
+
+      // Face (Skin)
+      ctx.beginPath();
+      ctx.arc(headX, headY, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Front hair / bangs framing face (Chestnut brown)
+      ctx.fillStyle = womanHair;
+      ctx.beginPath();
+      ctx.arc(headX, headY - 3 * scale, headR * 1.15, Math.PI * 0.9, Math.PI * 2.1);
+      ctx.quadraticCurveTo(headX + headR * 1.1, headY - 2 * scale, headX + headR * 0.6, headY + 5 * scale);
+      ctx.quadraticCurveTo(headX + headR * 0.2, headY - headR * 0.25, headX - headR * 0.7, headY - headR * 0.15);
+      ctx.quadraticCurveTo(headX - headR * 1.1, headY - 2 * scale, headX - headR * 1.15, headY - 3 * scale);
+      ctx.closePath();
+      ctx.fill();
+
+      // Arms: Fluid disco poses (Skin)
+      const lShoulderX = chestX - 16 * scale;
+      const lShoulderY = chestY + 2 * scale;
+      const rShoulderX = chestX + 16 * scale;
+      const rShoulderY = chestY + 2 * scale;
+
+      let rElbowX, rElbowY, rHandX, rHandY;
+      let lElbowX, lElbowY, lHandX, lHandY;
+
+      if (phrase < 4) {
+        // Move 1: Graceful Disco Sway & Point
+        const wave = Math.sin(beat * Math.PI);
+        rElbowX = rShoulderX + 20 * scale;
+        rElbowY = rShoulderY - 18 * scale + wave * 6 * scale;
+        rHandX = rElbowX + 18 * scale;
+        rHandY = rElbowY - 24 * scale - wave * 10 * scale;
+
+        lElbowX = lShoulderX - 18 * scale;
+        lElbowY = lShoulderY + 20 * scale;
+        lHandX = hipX - 14 * scale;
+        lHandY = hipY + 4 * scale;
+
+        emitSpark(rHandX, rHandY, '#ffb703');
+      } else {
+        // Move 2: Overhead Double Wave & Shimmy
+        const waveL = Math.sin(beat * Math.PI * 2) * 8 * scale;
+        const waveR = Math.sin(beat * Math.PI * 2 + Math.PI) * 8 * scale;
+
+        lElbowX = lShoulderX - 18 * scale;
+        lElbowY = lShoulderY - 18 * scale;
+        lHandX = lElbowX - 8 * scale + waveL;
+        lHandY = lElbowY - 24 * scale;
+
+        rElbowX = rShoulderX + 18 * scale;
+        rElbowY = rShoulderY - 18 * scale;
+        rHandX = rElbowX + 8 * scale + waveR;
+        rHandY = rElbowY - 24 * scale;
+
+        emitSpark(lHandX, lHandY, '#ffb703');
+        emitSpark(rHandX, rHandY, '#fb8500');
+      }
+
+      ctx.fillStyle = womanSkin;
+      drawSegment(lShoulderX, lShoulderY, lElbowX, lElbowY, 7 * scale, 5 * scale);
+      drawSegment(lElbowX, lElbowY, lHandX, lHandY, 5 * scale, 4 * scale);
+      drawSegment(rShoulderX, rShoulderY, rElbowX, rElbowY, 7 * scale, 5 * scale);
+      drawSegment(rElbowX, rElbowY, rHandX, rHandY, 5 * scale, 4 * scale);
+
+      ctx.beginPath();
+      ctx.arc(rHandX, rHandY, 5 * scale, 0, Math.PI * 2);
+      ctx.arc(lHandX, lHandY, 5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    if (danceAnimId) cancelAnimationFrame(danceAnimId);
+    let startTime = null;
+    const duration = 6000;
+
+    function animate(now) {
+      if (!startTime) startTime = now;
+      const elapsed = now - startTime;
+
+      if (elapsed >= duration) {
+        if (danceCanvas) {
+          danceCanvas.remove();
+          danceCanvas = null;
+        }
+        danceAnimId = null;
+        return;
+      }
+
+      const t = elapsed / 1000;
+      const beat = t * 2.2;
+      const phrase = beat % 8;
+
+      ctx.clearRect(0, 0, w, h);
+
+      let alpha = 1;
+      if (elapsed < 350) {
+        alpha = Math.max(0.1, elapsed / 350);
+      } else if (elapsed > duration - 700) {
+        alpha = Math.max(0, (duration - elapsed) / 700);
+      }
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      // Draw Dancing Couple (Man & Woman)
+      const manCenterX = w * 0.40;
+      const womanCenterX = w * 0.60;
+      drawMan(manCenterX, baseY, beat, phrase);
+      drawWoman(womanCenterX, baseY, beat, phrase);
+
+      // Render Floating Disco Sparks
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.x += s.vx;
+        s.y += s.vy;
+        s.alpha -= 0.025;
+        if (s.alpha <= 0) {
+          sparks.splice(i, 1);
+          continue;
+        }
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = alpha * s.alpha;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size * scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+      danceAnimId = requestAnimationFrame(animate);
+    }
+
+    danceAnimId = requestAnimationFrame(animate);
+  }
+
   function sendEffect(effectId) {
     if (effectCooldown) {
       displaySystemMessage('Wait to send another effect.', 'clock');
@@ -2961,6 +3448,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       triggerTomatoEffect();
       displaySystemMessage('You sent a tomato splat.', 'tomato');
       startEffectCooldown();
+    } else if (effectId === 'dance') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'dance' }));
+      triggerDanceEffect();
+      displaySystemMessage('You sent a dance.', 'dance');
+      startEffectCooldown();
     }
   }
 
@@ -2975,6 +3467,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     } else if (effectName === 'tomato') {
       triggerTomatoEffect();
       displaySystemMessage('Peer sent you a tomato splat!', 'tomato');
+    } else if (effectName === 'dance') {
+      triggerDanceEffect();
+      displaySystemMessage('Peer sent you a dance!', 'dance');
     }
   }
 
