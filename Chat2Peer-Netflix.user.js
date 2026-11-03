@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.10.1
+// @version      1.10.2
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -46,6 +46,9 @@
   let reconnectAttempts = 0;
   let reconnectTimer = null;
   let autoReconnectTimer = null;
+  let disconnectGraceTimer = null;
+  let wasConnected = false;
+  const clientId = Math.random().toString(36).substring(2, 9);
   let isIntentionalDisconnect = false;
   let isPeerDisconnected = false;
   let isNegotiating = false;
@@ -1807,6 +1810,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         updateStatus('disconnected', 'Peer off');
       } else if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
         updateStatus('connected', 'Connected');
+        return;
       } else {
         updateStatus('connecting', 'Waiting for peer...');
         const b = document.getElementById('c2p-connect-btn');
@@ -1815,7 +1819,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       }
       // Announce presence to any peer already waiting in the lounge
       try {
-        ws.send(JSON.stringify({ type: 'hello' }));
+        ws.send(JSON.stringify({ type: 'hello', from: clientId }));
       } catch(e){}
     };
 
@@ -1829,28 +1833,17 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             handlePeerDisconnected();
             break;
           case 'hello':
-            isPeerDisconnected = false;
-            console.log('[C2P] Peer announced presence in lounge');
-            if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
-            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
-            if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
-              console.log('[C2P] Negotiation/connecting already in progress. Ignoring duplicate hello.');
-              break;
-            }
-            isNegotiating = true;
-            displaySystemMessage('Peer detected! Establishing fresh connection...');
-            resetWebRTC();
-            initPC();
-            await createOffer();
-            setTimeout(() => { isNegotiating = false; }, 3000);
-            break;
           case 'peer_joined':
             isPeerDisconnected = false;
-            console.log('[C2P] Peer joined room');
+            console.log('[C2P] Peer signal received:', msg.type);
             if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
-            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') break;
+            if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
+            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+              console.log('[C2P] Already connected and dataChannel open. Ignoring signal.');
+              break;
+            }
             if (isNegotiating || peerConnection?.iceConnectionState === 'checking' || peerConnection?.connectionState === 'connecting') {
-              console.log('[C2P] Negotiation/connecting already in progress. Ignoring duplicate peer_joined.');
+              console.log('[C2P] Negotiation/connecting already in progress. Ignoring duplicate signal.');
               break;
             }
             isNegotiating = true;
@@ -1876,20 +1869,41 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
             isPeerDisconnected = false;
             console.log('[C2P] Received offer from peer');
             if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
-            const now = Date.now();
-            if (peerConnection && (peerConnection.iceConnectionState === 'checking' || peerConnection.connectionState === 'connecting') && (now - lastOfferReceived < 3000)) {
-              console.log('[C2P] Ignored duplicate rapid offer while ICE is checking.');
+            if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
+
+            // If P2P is already healthy, ignore unsolicited offers
+            if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+              console.log('[C2P] Already connected, ignoring offer');
               break;
             }
-            lastOfferReceived = now;
-            if (peerConnection) {
-              resetWebRTC();
+
+            // Handle glare (offer collision)
+            const isCollision = peerConnection && (peerConnection.signalingState !== 'stable' || isNegotiating);
+            if (isCollision) {
+              const isPolite = msg.from && msg.from < clientId;
+              if (!isPolite) {
+                console.log('[C2P] Glare detected: impolite peer ignoring offer');
+                break;
+              }
+              console.log('[C2P] Glare detected: polite peer accepting offer');
+              try {
+                await peerConnection.setLocalDescription({ type: 'rollback' });
+              } catch(e) {
+                resetWebRTC();
+                initPC();
+              }
+            } else if (!peerConnection || peerConnection.signalingState === 'closed') {
+              initPC();
             }
-            initPC();
+
             await peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
             const a = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(a);
-            ws.send(JSON.stringify(peerConnection.localDescription));
+            ws.send(JSON.stringify({
+              type: peerConnection.localDescription.type,
+              sdp: peerConnection.localDescription.sdp,
+              from: clientId
+            }));
             break;
           case 'answer':
             console.log('[C2P] Received answer from peer');
@@ -1956,6 +1970,23 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   // ── WebRTC ──
+  function handleConnectionFailure(reason = 'Connection lost') {
+    const recBtn = document.getElementById('c2p-reconnect-btn');
+    if (recBtn) recBtn.classList.remove('c2p-spinning');
+    if (isPeerDisconnected) {
+      updateStatus('disconnected', 'Peer disconnected');
+      return;
+    }
+    updateStatus('disconnected', reason);
+    showSetupBanner('Reconnect Fresh Session', `${reason}. Click to reconnect.`);
+    resetWebRTC();
+    if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
+      scheduleAutoReconnect(reason);
+    } else {
+      displayActionMessage(`${reason}.`, 'Reconnect Now', forceFreshReconnect, 'warn');
+    }
+  }
+
   function initPC() {
     peerConnection = new RTCPeerConnection(ICE_CONFIG);
     peerConnection.onicecandidate = e => {
@@ -1968,18 +1999,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const state = peerConnection.iceConnectionState;
       console.log('[C2P] ICE Connection State:', state);
       if (state === 'failed') {
-        if (isPeerDisconnected) {
-          updateStatus('disconnected', 'Peer disconnected');
-          return;
+        if (disconnectGraceTimer) {
+          clearTimeout(disconnectGraceTimer);
+          disconnectGraceTimer = null;
         }
-        updateStatus('disconnected', 'ICE Failed');
-        showSetupBanner('Reconnect Fresh Session', 'Network route failed. Click to reconnect.');
-        resetWebRTC();
-        if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
-          scheduleAutoReconnect('Network route failed (ICE timeout)');
-        } else {
-          displayActionMessage('Network route failed (ICE timeout).', 'Reconnect Now', forceFreshReconnect, 'warn');
-        }
+        wasConnected = false;
+        handleConnectionFailure('Network route failed (ICE timeout)');
       }
     };
 
@@ -1987,6 +2012,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const s = peerConnection.connectionState;
       console.log('[C2P] PeerConnection State:', s);
       if (s === 'connected') {
+        if (disconnectGraceTimer) {
+          clearTimeout(disconnectGraceTimer);
+          disconnectGraceTimer = null;
+        }
         if (autoReconnectTimer) {
           clearTimeout(autoReconnectTimer);
           autoReconnectTimer = null;
@@ -1995,24 +2024,31 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         if (recBtn) recBtn.classList.remove('c2p-spinning');
         updateStatus('connected', 'Connected');
         const su = document.getElementById('c2p-setup'); if (su) su.style.display = 'none';
-        displaySystemMessage('Secure connection!', 'lock');
+        if (!wasConnected) {
+          displaySystemMessage('Secure connection!', 'lock');
+          wasConnected = true;
+        }
         setInputEnabled(true);
         focusMsgInput();
-      } else if (['disconnected', 'failed', 'closed'].includes(s)) {
-        const recBtn = document.getElementById('c2p-reconnect-btn');
-        if (recBtn) recBtn.classList.remove('c2p-spinning');
-        if (isPeerDisconnected) {
-          updateStatus('disconnected', 'Peer disconnected');
-          return;
+      } else if (s === 'disconnected') {
+        console.log('[C2P] PeerConnection disconnected. Waiting 5s grace period before teardown...');
+        if (!disconnectGraceTimer) {
+          disconnectGraceTimer = setTimeout(() => {
+            disconnectGraceTimer = null;
+            if (peerConnection?.connectionState === 'disconnected') {
+              console.log('[C2P] Grace period expired, tearing down and reconnecting.');
+              wasConnected = false;
+              handleConnectionFailure('Connection lost');
+            }
+          }, 5000);
         }
-        updateStatus('disconnected', 'Connection lost');
-        showSetupBanner('Reconnect Fresh Session', 'Connection lost. Click to reconnect.');
-        resetWebRTC();
-        if (ws && ws.readyState === WebSocket.OPEN && !isIntentionalDisconnect) {
-          scheduleAutoReconnect('Connection lost');
-        } else {
-          displayActionMessage('Connection lost.', 'Reconnect Now', forceFreshReconnect, 'warn');
+      } else if (['failed', 'closed'].includes(s)) {
+        if (disconnectGraceTimer) {
+          clearTimeout(disconnectGraceTimer);
+          disconnectGraceTimer = null;
         }
+        wasConnected = false;
+        handleConnectionFailure('Connection lost');
       }
     };
 
@@ -2024,7 +2060,11 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     setupDC();
     const o = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(o);
-    ws.send(JSON.stringify(peerConnection.localDescription));
+    ws.send(JSON.stringify({
+      type: peerConnection.localDescription.type,
+      sdp: peerConnection.localDescription.sdp,
+      from: clientId
+    }));
   }
 
   function setupDC() {
@@ -2102,6 +2142,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   function resetWebRTC() {
+    if (disconnectGraceTimer) {
+      clearTimeout(disconnectGraceTimer);
+      disconnectGraceTimer = null;
+    }
     stopSyncLoop();
     if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
     if (remoteTypingTimeout) { clearTimeout(remoteTypingTimeout); remoteTypingTimeout = null; }
@@ -2131,6 +2175,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    if (full) wasConnected = false;
     resetWebRTC();
     showSetupBanner('Reconnect Fresh Session', 'Click to reconnect and wait for a peer.');
     if (full) {
@@ -2151,6 +2196,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function handlePeerDisconnected() {
     console.log('[C2P] Remote peer manually disconnected the session.');
     isPeerDisconnected = true;
+    wasConnected = false;
     if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectAttempts = 0;
@@ -2174,6 +2220,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function terminateConnection() {
     console.log('[C2P] Manually terminating connection and stopping automatic retries.');
     isIntentionalDisconnect = true;
+    wasConnected = false;
     if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectAttempts = 0;
