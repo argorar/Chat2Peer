@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.10.2
+// @version      1.11.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -1122,6 +1122,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     play: '<polygon points="5 3 19 12 5 21 5 3"/>',
     pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
     seek: '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>',
+    speed: '<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     audio: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     party: '<polygon points="4 22 7.5 13.5 10.5 16.5 4 22"/><path d="M12 15l2-2"/><path d="M16 11l4-4"/><path d="M17 2l.5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><circle cx="10" cy="5" r="1"/><circle cx="5" cy="10" r="1"/>',
     fireworks: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
@@ -1272,6 +1273,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   function getPlayer() {
     if (!isWatchPage()) return null;
     const np = getNetflixPlayer();
+    const v = document.querySelector('.watch-video video') || (isWatchPage() ? document.querySelector('video') : null);
     if (np) {
       return {
         play: () => np.play(),
@@ -1280,10 +1282,31 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         seek: (ms) => np.seek(Math.max(0, ms - 100)),
         getTime: () => (np.getSegmentTime?.() ?? np.getCurrentTime()) || 0,
         isPaused: () => np.isPaused(),
+        getPlaybackRate: () => {
+          if (typeof np.getPlaybackRate === 'function') {
+            try {
+              const r = np.getPlaybackRate();
+              if (typeof r === 'number' && !isNaN(r) && r > 0) return r;
+            } catch (e) {}
+          }
+          if (v && typeof v.playbackRate === 'number' && v.playbackRate > 0) {
+            return v.playbackRate;
+          }
+          return 1;
+        },
+        setPlaybackRate: (rate) => {
+          const num = Number(rate);
+          if (isNaN(num) || num <= 0) return;
+          if (typeof np.setPlaybackRate === 'function') {
+            try { np.setPlaybackRate(num); } catch (e) {}
+          }
+          if (v) {
+            try { v.playbackRate = num; } catch (e) {}
+          }
+        },
         isReady: true
       };
     }
-    const v = document.querySelector('.watch-video video') || (isWatchPage() ? document.querySelector('video') : null);
     if (v) {
       return {
         play: () => v.play().catch(() => {}),
@@ -1291,10 +1314,23 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         seek: (ms) => { v.currentTime = Math.max(0, (ms - 100) / 1000); },
         getTime: () => (v.currentTime * 1000) || 0,
         isPaused: () => v.paused,
+        getPlaybackRate: () => (typeof v.playbackRate === 'number' && v.playbackRate > 0) ? v.playbackRate : 1,
+        setPlaybackRate: (rate) => {
+          const num = Number(rate);
+          if (!isNaN(num) && num > 0) {
+            try { v.playbackRate = num; } catch (e) {}
+          }
+        },
         isReady: v.readyState > 0
       };
     }
     return null;
+  }
+
+  function formatSpeed(speed) {
+    const s = Number(speed);
+    if (isNaN(s) || s <= 0) return '1x';
+    return `${parseFloat(s.toFixed(2))}x`;
   }
 
   // Synthetic mousemove to wake up Netflix controls & sync rendering
@@ -1525,6 +1561,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       if (e.target && (e.target.closest?.('#c2p-sidebar') || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       pollPlayerState(true);
     });
+    document.addEventListener('ratechange', () => {
+      if (isWatchPage()) pollPlayerState(true);
+    }, true);
 
     if (navigator.mediaSession) {
       try {
@@ -1542,11 +1581,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     }
   }
 
-  function broadcastSync(action, time, videoId = null, episodeLabel = null) {
+  function broadcastSync(action, time, videoId = null, episodeLabel = null, speed = null) {
     if (suppressBroadcast > 0 || !dataChannel || dataChannel.readyState !== 'open') return;
     const msg = { type: 'sync', action, time };
     if (videoId) msg.videoId = videoId;
     if (episodeLabel) msg.episodeLabel = episodeLabel;
+    if (speed !== null && speed !== undefined) msg.speed = speed;
     dataChannel.send(JSON.stringify(msg));
   }
 
@@ -1578,16 +1618,25 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
 
     const time = p.getTime();
     const paused = p.isPaused();
+    const playbackRate = p.getPlaybackRate ? p.getPlaybackRate() : 1;
 
     if (!lastPlayerState) {
-      lastPlayerState = { paused, time };
+      lastPlayerState = { paused, time, playbackRate };
       return;
     }
 
     const stateChanged = paused !== lastPlayerState.paused;
+    const rateChanged = Math.abs(playbackRate - (lastPlayerState.playbackRate || 1)) > 0.05;
     const timeDelta = Math.abs(time - lastPlayerState.time);
     // User seeked if time jumped unexpectedly (>2.5s) without normal 1x progression
     const seeked = isUserTriggered ? (timeDelta > 1500) : (timeDelta > 2500);
+
+    if (rateChanged) {
+      const speedStr = formatSpeed(playbackRate);
+      console.log("[C2P] Detected speed change to", speedStr);
+      displaySystemMessage('You set playback speed to ' + speedStr, 'speed');
+      broadcastSync('speed', time, null, null, playbackRate);
+    }
 
     if (seeked) {
       console.log("[C2P] Detected seek to", Math.floor(time / 1000));
@@ -1605,7 +1654,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       }
     }
 
-    lastPlayerState = { paused, time };
+    lastPlayerState = { paused, time, playbackRate };
   }
 
   function startSyncLoop() {
@@ -1630,6 +1679,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
               action: 'heartbeat',
               time: p.getTime(),
               paused: p.isPaused(),
+              speed: p.getPlaybackRate ? p.getPlaybackRate() : 1,
               videoId: currentVideoId || getVideoId()
             }));
           } else {
@@ -1680,6 +1730,16 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         p.seek(d.time);
         wakeNetflixUI();
         displaySystemMessage('Peer seeked to ' + Math.floor(d.time / 1000) + 's', 'seek');
+      } else if (d.action === 'speed') {
+        const rate = Number(d.speed);
+        if (!isNaN(rate) && rate > 0) {
+          p.setPlaybackRate(rate);
+          if (d.time && Math.abs(p.getTime() - d.time) > DRIFT_THRESHOLD) {
+            p.seek(d.time);
+          }
+          wakeNetflixUI();
+          displaySystemMessage('Peer set playback speed to ' + formatSpeed(rate), 'speed');
+        }
       } else if (d.action === 'heartbeat') {
         if (d.videoId && getVideoId() && String(d.videoId) !== getVideoId()) {
           console.log("[C2P] Reconciling episode from heartbeat:", d.videoId);
@@ -1687,13 +1747,21 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           changeEpisode(d.videoId);
           return;
         }
+        if (d.speed && p.getPlaybackRate && Math.abs(p.getPlaybackRate() - d.speed) > 0.05) {
+          console.log("[C2P] Reconciling speed from heartbeat:", d.speed);
+          p.setPlaybackRate(d.speed);
+        }
         const localTime = p.getTime();
         if (!p.isPaused() && !d.paused && Math.abs(localTime - d.time) > DRIFT_THRESHOLD) {
           p.seek(d.time);
           wakeNetflixUI();
         }
       }
-      lastPlayerState = { paused: p.isPaused(), time: p.getTime() };
+      lastPlayerState = {
+        paused: p.isPaused(),
+        time: p.getTime(),
+        playbackRate: p.getPlaybackRate ? p.getPlaybackRate() : (d.speed || 1)
+      };
     } catch (e) {
       console.error("[C2P] Error applying sync:", e);
     } finally {
