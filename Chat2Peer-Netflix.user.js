@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.11.0
+// @version      1.12.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -77,7 +77,9 @@
     { id: 'celebration', name: 'Celebration', icon: '🎉', title: 'Celebration (Confetti)' },
     { id: 'fireworks', name: 'Fireworks', icon: '🎆', title: 'Fireworks' },
     { id: 'tomato', name: 'Tomato Splat', icon: '🍅', title: 'Tomato Splat' },
-    { id: 'dance', name: 'Dance', icon: '🕺', title: 'Disco Dance' }
+    { id: 'dance', name: 'Dance', icon: '🕺', title: 'Disco Dance' },
+    { id: 'stare', name: 'Stare', icon: '👀', title: 'Stare (Eyes)' },
+    { id: 'smirk', name: 'Smirk', icon: '😏', title: 'Smirk' }
   ];
 
   // ── Klipy GIF State ──
@@ -387,10 +389,21 @@
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-has-unread{border-color:#e50914;background:rgba(229,9,20,.22);box-shadow:0 4px 16px rgba(229,9,20,.4)}
 #c2p-sidebar .c2p-scroll-bottom-btn svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.5;fill:none;flex-shrink:0}
-#c2p-sidebar .c2p-msg{max-width:85%;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
+#c2p-sidebar .c2p-msg{position:relative;max-width:85%;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
+#c2p-sidebar .c2p-reply-btn{display:none;position:absolute;top:-8px;right:8px;background:#1a1a1a;border:1px solid rgba(255,255,255,.15);color:#aaa;border-radius:10px;padding:2px 7px;font-size:10px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:5;align-items:center;gap:3px;font-family:inherit;transition:all .2s}
+#c2p-sidebar .c2p-reply-btn:hover{color:#fff;border-color:#e50914}
+#c2p-sidebar .c2p-msg.c2p-received:hover .c2p-reply-btn{display:inline-flex}
+#c2p-sidebar .c2p-reply-preview{font-size:11px;padding:3px 7px;margin-bottom:5px;border-radius:4px;background:rgba(0,0,0,.3);border-left:3px solid #e50914;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#c2p-sidebar .c2p-msg.c2p-sent .c2p-reply-preview{border-left-color:rgba(255,255,255,.7);color:rgba(255,255,255,.85)}
+#c2p-sidebar .c2p-reply-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;background:rgba(20,20,20,.95);border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#aaa}
+#c2p-sidebar .c2p-reply-bar-content{display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#c2p-sidebar .c2p-reply-bar-label{color:#e50914;font-weight:600;flex-shrink:0}
+#c2p-sidebar .c2p-reply-bar-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eee}
+#c2p-sidebar .c2p-reply-bar-close{background:transparent;border:none;color:#888;cursor:pointer;font-size:12px;padding:1px 4px;border-radius:3px;line-height:1}
+#c2p-sidebar .c2p-reply-bar-close:hover{color:#fff;background:rgba(255,255,255,.1)}
 #c2p-sidebar .c2p-msg-author{font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:2px;line-height:1.2;letter-spacing:.02em}
 #c2p-sidebar .c2p-msg.c2p-system{align-self:center;background:transparent;color:#666;font-size:11px;box-shadow:none;border:1px dashed rgba(255,255,255,.08);border-radius:10px;padding:6px 12px;max-width:95%;text-align:center;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
 #c2p-sidebar .c2p-msg.c2p-system svg{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;flex-shrink:0}
@@ -611,6 +624,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           <button id="c2p-preview-cancel-btn" class="c2p-preview-btn c2p-preview-cancel" title="Discard image">✕</button>
           <button id="c2p-preview-send-btn" class="c2p-preview-btn c2p-preview-send" title="Send image">✓</button>
         </div>
+      </div>
+      <div id="c2p-reply-bar" class="c2p-reply-bar" style="display:none;">
+        <div class="c2p-reply-bar-content">
+          <span class="c2p-reply-bar-label">Replying to:</span>
+          <span id="c2p-reply-bar-text" class="c2p-reply-bar-text"></span>
+        </div>
+        <button id="c2p-reply-bar-close" class="c2p-reply-bar-close" title="Cancel">✕</button>
       </div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
@@ -846,6 +866,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const previewCancelBtn = document.getElementById('c2p-preview-cancel-btn');
     if (previewCancelBtn) previewCancelBtn.addEventListener('click', clearImagePreview);
 
+    const replyCloseBtn = document.getElementById('c2p-reply-bar-close');
+    if (replyCloseBtn) replyCloseBtn.addEventListener('click', clearReply);
+
     const previewSendBtn = document.getElementById('c2p-preview-send-btn');
     if (previewSendBtn) previewSendBtn.addEventListener('click', () => {
       sendPendingImage();
@@ -855,7 +878,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     msgInput.addEventListener('input', handleLocalTyping);
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
-      if (e.key === 'Enter' || e.keyCode === 13) {
+      if (e.key === 'Escape') {
+        clearReply();
+      } else if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         if (pendingImageBlob) {
           sendPendingImage();
@@ -1014,6 +1039,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       if (danceCanvas && danceCanvas.parentElement !== target) {
         target.appendChild(danceCanvas);
       }
+      if (stareCanvas && stareCanvas.parentElement !== target) {
+        target.appendChild(stareCanvas);
+      }
+      if (smirkCanvas && smirkCanvas.parentElement !== target) {
+        target.appendChild(smirkCanvas);
+      }
       if (!userScrolledUp) {
         scrollToBottom(false);
       }
@@ -1127,7 +1158,9 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     party: '<polygon points="4 22 7.5 13.5 10.5 16.5 4 22"/><path d="M12 15l2-2"/><path d="M16 11l4-4"/><path d="M17 2l.5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><circle cx="10" cy="5" r="1"/><circle cx="5" cy="10" r="1"/>',
     fireworks: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
     tomato: '<circle cx="12" cy="13" r="8"/><path d="M12 5v3M9 6l3 2 3-2"/>',
-    dance: '<circle cx="12" cy="4" r="2"/><path d="M9 22l3-9 3 9M6 13l6-3 6 3"/>'
+    dance: '<circle cx="12" cy="4" r="2"/><path d="M9 22l3-9 3 9M6 13l6-3 6 3"/>',
+    stare: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    smirk: '<circle cx="12" cy="12" r="10"/><path d="M8 9.5a2 2 0 0 1 2-1M14 8.5a2 2 0 0 1 2 1M9 16c2 0 5-1 6-3"/>'
   };
   function getSystemIconSvg(type) {
     const p = SYSTEM_ICONS[type];
@@ -1166,16 +1199,42 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (btn) { btn.disabled = false; btn.textContent = btnText; }
     if (hint) { hint.textContent = hintText; hint.style.color = '#888'; }
   }
-  function displayUserMessage(content, type, isGif = false, author = null, isImage = false) {
+  let currentReply = null;
+  function setReply(text) {
+    currentReply = text;
+    const bar = document.getElementById('c2p-reply-bar');
+    const txt = document.getElementById('c2p-reply-bar-text');
+    if (bar && txt) {
+      txt.textContent = text;
+      bar.style.display = 'flex';
+    }
+    focusMsgInput();
+  }
+  function clearReply() {
+    currentReply = null;
+    const bar = document.getElementById('c2p-reply-bar');
+    const txt = document.getElementById('c2p-reply-bar-text');
+    if (bar && txt) {
+      bar.style.display = 'none';
+      txt.textContent = '';
+    }
+  }
+  function displayUserMessage(content, type, isGif = false, author = null, isImage = false, replyTo = null) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
+    if (replyTo) {
+      const q = document.createElement('div');
+      q.classList.add('c2p-reply-preview');
+      q.textContent = `↳ ${replyTo}`;
+      d.appendChild(q);
+    }
     if (isGif) {
-      d.style.cssText = 'background:transparent;padding:0;border:none';
+      if (!replyTo) d.style.cssText = 'background:transparent;padding:0;border:none';
       const w = document.createElement('div'); w.classList.add('c2p-gif-wrap');
       const i = document.createElement('img'); i.src = content;
       i.onload = () => { if (!userScrolledUp) scrollToBottom(true); };
       w.appendChild(i); d.appendChild(w);
     } else if (isImage) {
-      d.style.cssText = 'background:transparent;padding:0;border:none';
+      if (!replyTo) d.style.cssText = 'background:transparent;padding:0;border:none';
       if (author && type === 'received') {
         const authEl = document.createElement('div');
         authEl.classList.add('c2p-msg-author');
@@ -1204,12 +1263,19 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         authEl.classList.add('c2p-msg-author');
         authEl.textContent = author;
         d.appendChild(authEl);
-        const textEl = document.createElement('div');
-        textEl.textContent = content;
-        d.appendChild(textEl);
-      } else {
-        d.textContent = content;
       }
+      const textEl = document.createElement('div');
+      textEl.textContent = content;
+      d.appendChild(textEl);
+    }
+    if (type === 'received') {
+      const rb = document.createElement('button');
+      rb.className = 'c2p-reply-btn';
+      rb.type = 'button';
+      rb.title = 'Reply';
+      rb.textContent = '↩ Reply';
+      rb.onclick = () => setReply(isGif ? '[GIF]' : isImage ? '[Image]' : content);
+      d.appendChild(rb);
     }
     appendMsg(d);
   }
@@ -2151,14 +2217,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         if (d.type === 'peer_disconnected') handlePeerDisconnected();
         else if (d.type === 'sync') handleSyncMessage(d);
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
-        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname); }
+        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname, false, d.replyTo); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
         else if (d.type === 'sfx') {
           playSoundEffect(d.idx);
           const s = SOUND_EFFECTS[d.idx];
           if (s) displaySystemMessage(s.name, 'audio');
         }
-        else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true); }
+        else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true, null, false, d.replyTo); }
         else if (d.type === 'nudge') { showRemoteTyping(false); handleIncomingNudge(); }
         else if (d.type === 'effect') { showRemoteTyping(false); handleIncomingEffect(d.name); }
         else if (d.type === 'audio_chunk') {
@@ -2210,6 +2276,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   function resetWebRTC() {
+    clearReply();
     if (disconnectGraceTimer) {
       clearTimeout(disconnectGraceTimer);
       disconnectGraceTimer = null;
@@ -2374,22 +2441,24 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (t && dataChannel?.readyState === 'open') {
       if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
       if (isTypingLocally) { isTypingLocally = false; sendTypingStatus(false); }
-      const payload = { type: 'text', content: t };
+      const payload = { type: 'text', content: t, replyTo: currentReply };
       if (nickname && nickname.trim()) {
         payload.nickname = nickname.trim();
       }
       dataChannel.send(JSON.stringify(payload));
-      displayUserMessage(t, 'sent');
+      displayUserMessage(t, 'sent', false, null, false, currentReply);
       i.value = '';
+      clearReply();
     }
   }
   function sendGifMessage(gifUrl) {
     if (gifUrl && dataChannel?.readyState === 'open') {
-      dataChannel.send(JSON.stringify({ type: 'gif', url: gifUrl }));
-      displayUserMessage(gifUrl, 'sent', true);
+      dataChannel.send(JSON.stringify({ type: 'gif', url: gifUrl, replyTo: currentReply }));
+      displayUserMessage(gifUrl, 'sent', true, null, false, currentReply);
       const kc = document.getElementById('c2p-klipy-container');
       if (kc) kc.style.display = 'none';
       focusMsgInput();
+      clearReply();
     }
   }
   function sendEmoji(e) { if(dataChannel?.readyState==='open'){dataChannel.send(JSON.stringify({type:'emoji',emoji:e}));createFloatingEmoji(e);} }
@@ -2508,6 +2577,10 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   let tomatoCanvas = null;
   let danceAnimId = null;
   let danceCanvas = null;
+  let stareAnimId = null;
+  let stareCanvas = null;
+  let smirkAnimId = null;
+  let smirkCanvas = null;
 
   function playCelebrationSound() {
     try {
@@ -3336,6 +3409,21 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       const chestX = rootX + hipSway * 0.6;
       const chestY = waistY - 26 * scale;
 
+      // Head position
+      const headX = chestX + hipSway * 0.2;
+      const headY = chestY - 24 * scale;
+      const headR = 12 * scale;
+
+      // Long Hair (Back layer in background, behind clothes and body)
+      const hairLag = Math.sin((beat - 0.3) * Math.PI * 0.5) * 16 * scale;
+      ctx.fillStyle = womanHairDark;
+      ctx.beginPath();
+      ctx.arc(headX, headY - 2 * scale, headR * 1.3, Math.PI * 0.9, Math.PI * 2.1);
+      ctx.quadraticCurveTo(headX + headR * 1.6 + hairLag, headY + 30 * scale, headX + headR * 0.6 + hairLag, headY + 55 * scale);
+      ctx.quadraticCurveTo(headX - headR * 0.5 + hairLag, headY + 35 * scale, headX - headR * 1.2, headY);
+      ctx.closePath();
+      ctx.fill();
+
       // Legs (Skin)
       const lHip = hipX - 10 * scale;
       const rHip = hipX + 10 * scale;
@@ -3385,21 +3473,6 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       ctx.lineTo(chestX + 16 * scale, chestY);
       ctx.lineTo(waistX + 12 * scale, waistY);
       ctx.lineTo(waistX - 12 * scale, waistY);
-      ctx.closePath();
-      ctx.fill();
-
-      // Head & Long Flowing Hair (Chestnut brown / castaño)
-      const headX = chestX + hipSway * 0.2;
-      const headY = chestY - 24 * scale;
-      const headR = 12 * scale;
-
-      // Long Hair (Back layer with inertia lag)
-      const hairLag = Math.sin((beat - 0.3) * Math.PI * 0.5) * 16 * scale;
-      ctx.fillStyle = womanHairDark;
-      ctx.beginPath();
-      ctx.arc(headX, headY - 2 * scale, headR * 1.3, Math.PI * 0.9, Math.PI * 2.1);
-      ctx.quadraticCurveTo(headX + headR * 1.6 + hairLag, headY + 30 * scale, headX + headR * 0.6 + hairLag, headY + 55 * scale);
-      ctx.quadraticCurveTo(headX - headR * 0.5 + hairLag, headY + 35 * scale, headX - headR * 1.2, headY);
       ctx.closePath();
       ctx.fill();
 
@@ -3541,6 +3614,446 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     danceAnimId = requestAnimationFrame(animate);
   }
 
+  function triggerStareEffect() {
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!stareCanvas) {
+      stareCanvas = document.createElement('canvas');
+      stareCanvas.className = 'c2p-stare-canvas';
+      stareCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(stareCanvas);
+    } else if (stareCanvas.parentElement !== container) {
+      container.appendChild(stareCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    stareCanvas.width = Math.floor(w * dpr);
+    stareCanvas.height = Math.floor(h * dpr);
+    const ctx = stareCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    if (stareAnimId) cancelAnimationFrame(stareAnimId);
+    const startTime = performance.now();
+    const DURATION = 4200;
+
+    function getPupilOffset(elapsed) {
+      // Moves pupil from right (+1) to left (-1) and back
+      if (elapsed < 350) return 1;
+      if (elapsed < 1200) {
+        const p = (elapsed - 350) / 850;
+        const ease = (1 - Math.cos(p * Math.PI)) / 2;
+        return 1 - 2 * ease; // +1 -> -1
+      }
+      if (elapsed < 1800) return -1;
+      if (elapsed < 2500) {
+        const p = (elapsed - 1800) / 700;
+        const ease = (1 - Math.cos(p * Math.PI)) / 2;
+        return -1 + 2 * ease; // -1 -> +1
+      }
+      if (elapsed < 2900) return 1;
+      if (elapsed < 3600) {
+        const p = (elapsed - 2900) / 700;
+        const ease = (1 - Math.cos(p * Math.PI)) / 2;
+        return 1 - 2 * ease; // +1 -> -1
+      }
+      return -1;
+    }
+
+    function drawEye(eyeCenterX, eyeCenterY, tilt, rx, ry, pupilRadius, pupilOffsetNorm, blink) {
+      ctx.save();
+      ctx.translate(eyeCenterX, eyeCenterY);
+      ctx.rotate(tilt);
+      ctx.scale(1, blink);
+
+      // Eyeball Sclera (White)
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      ctx.shadowBlur = 18;
+      ctx.fill();
+
+      // Clip inside sclera for pupil
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx - 1, ry - 1, 0, 0, Math.PI * 2);
+      ctx.clip();
+
+      // Pupil position
+      const maxDx = rx * 0.48;
+      const pupilX = pupilOffsetNorm * maxDx;
+      const pupilY = ry * 0.04;
+
+      // Iris / Pupil (Emoji style dark brown/black gradient)
+      ctx.beginPath();
+      ctx.arc(pupilX, pupilY, pupilRadius, 0, Math.PI * 2);
+      const pupilGrad = ctx.createRadialGradient(pupilX - pupilRadius * 0.25, pupilY - pupilRadius * 0.25, pupilRadius * 0.08, pupilX, pupilY, pupilRadius);
+      pupilGrad.addColorStop(0, '#362016');
+      pupilGrad.addColorStop(0.65, '#170e0a');
+      pupilGrad.addColorStop(1, '#080504');
+      ctx.fillStyle = pupilGrad;
+      ctx.shadowColor = 'transparent';
+      ctx.fill();
+
+      // Glossy Reflection Glints
+      // Big primary glint
+      ctx.beginPath();
+      ctx.arc(pupilX - pupilRadius * 0.32, pupilY - pupilRadius * 0.32, pupilRadius * 0.34, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Small secondary glint
+      ctx.beginPath();
+      ctx.arc(pupilX + pupilRadius * 0.36, pupilY + pupilRadius * 0.34, pupilRadius * 0.16, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fill();
+
+      ctx.restore();
+
+      // Outer Eye Stroke
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = '#222222';
+      ctx.lineWidth = Math.max(3.5, rx * 0.065);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      if (elapsed >= DURATION) {
+        if (stareCanvas) {
+          stareCanvas.remove();
+          stareCanvas = null;
+        }
+        stareAnimId = null;
+        return;
+      }
+
+      let scale = 1;
+      let alpha = 1;
+      if (elapsed < 350) {
+        const p = elapsed / 350;
+        scale = Math.sin(p * Math.PI * 0.5) * 1.05;
+        alpha = Math.min(1, p * 2.5);
+      } else if (elapsed > 3500) {
+        alpha = Math.max(0, 1 - (elapsed - 3500) / 700);
+      }
+
+      // Blink animation around 1650ms - 1790ms
+      let blink = 1;
+      if (elapsed >= 1650 && elapsed <= 1790) {
+        const bp = (elapsed - 1650) / 140;
+        blink = Math.max(0.08, Math.abs(Math.cos(bp * Math.PI)));
+      }
+
+      const pupilOffset = getPupilOffset(elapsed);
+
+      // Responsive emoji dimensions
+      const baseSize = Math.min(w, h) * 0.14;
+      const rx = baseSize * 0.76;
+      const ry = baseSize * 0.98;
+      const pupilRadius = baseSize * 0.44;
+      const spacing = baseSize * 1.6;
+
+      const cx = w * 0.5;
+      const cy = h * 0.46;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.translate(-cx, -cy);
+
+      // Left eye and Right eye (with emoji slight tilt)
+      drawEye(cx - spacing * 0.5, cy, -0.11, rx, ry, pupilRadius, pupilOffset, blink);
+      drawEye(cx + spacing * 0.5, cy, -0.05, rx, ry, pupilRadius, pupilOffset, blink);
+
+      ctx.restore();
+
+      stareAnimId = requestAnimationFrame(animate);
+    }
+
+    stareAnimId = requestAnimationFrame(animate);
+  }
+
+  function triggerSmirkEffect() {
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!smirkCanvas) {
+      smirkCanvas = document.createElement('canvas');
+      smirkCanvas.className = 'c2p-smirk-canvas';
+      smirkCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(smirkCanvas);
+    } else if (smirkCanvas.parentElement !== container) {
+      container.appendChild(smirkCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    smirkCanvas.width = Math.floor(w * dpr);
+    smirkCanvas.height = Math.floor(h * dpr);
+    const ctx = smirkCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    if (smirkAnimId) cancelAnimationFrame(smirkAnimId);
+    const startTime = performance.now();
+    const DURATION = 4000;
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      if (elapsed >= DURATION) {
+        if (smirkCanvas) {
+          smirkCanvas.remove();
+          smirkCanvas = null;
+        }
+        smirkAnimId = null;
+        return;
+      }
+
+      let scale = 1;
+      let alpha = 1;
+      if (elapsed < 350) {
+        const p = elapsed / 350;
+        scale = Math.sin(p * Math.PI * 0.5) * 1.05;
+        alpha = Math.min(1, p * 2.5);
+      } else if (elapsed > 3300) {
+        alpha = Math.max(0, 1 - (elapsed - 3300) / 700);
+      }
+
+      // Smirk progressive expression progression (0 to 1)
+      const smirkP = Math.min(1, Math.max(0, (elapsed - 250) / 750));
+      const smirkEase = (1 - Math.cos(smirkP * Math.PI)) / 2;
+
+      // Gentle floating hover
+      const floatY = Math.sin(elapsed * 0.003) * 5;
+
+      const baseR = Math.min(w, h) * 0.17;
+      const cx = w * 0.5;
+      const cy = h * 0.46 + floatY;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+
+      // 1. Human-proportioned Head with Radial Gradient and Soft Ambient Occlusion
+      const headRx = baseR * 0.94;
+      const headRy = baseR * 1.08;
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      ctx.shadowBlur = 26;
+      const faceGrad = ctx.createRadialGradient(-headRx * 0.3, -headRy * 0.3, baseR * 0.15, 0, 0, headRy);
+      faceGrad.addColorStop(0, '#ffe380');
+      faceGrad.addColorStop(0.72, '#ffb703');
+      faceGrad.addColorStop(1, '#f77f00');
+
+      ctx.beginPath();
+      ctx.ellipse(0, 0, headRx, headRy, 0, 0, Math.PI * 2);
+      ctx.fillStyle = faceGrad;
+      ctx.fill();
+
+      // Head perimeter definition
+      ctx.lineWidth = Math.max(3, baseR * 0.035);
+      ctx.strokeStyle = '#d47200';
+      ctx.stroke();
+      ctx.restore();
+
+      // Soft Cheek Blush (adds human warmth)
+      ctx.save();
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.14)';
+      [-1, 1].forEach(side => {
+        ctx.beginPath();
+        ctx.ellipse(side * headRx * 0.55, baseR * 0.14, baseR * 0.22, baseR * 0.12, side * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      // Feature lines color (warm anatomical dark brown)
+      const strokeColor = '#522504';
+      ctx.strokeStyle = strokeColor;
+      ctx.fillStyle = strokeColor;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // 2. Eyebrows (Thick, shaped, human anatomical arch)
+      const browThick = Math.max(4, baseR * 0.065);
+      ctx.lineWidth = browThick;
+
+      // Left eyebrow (relaxed, contemplative slant)
+      ctx.beginPath();
+      ctx.moveTo(-baseR * 0.62, -baseR * 0.34);
+      ctx.quadraticCurveTo(-baseR * 0.38, -baseR * 0.48 - smirkEase * baseR * 0.04, -baseR * 0.14, -baseR * 0.36);
+      ctx.stroke();
+
+      // Right eyebrow (slyly arched high up with smug skepticism)
+      const rBrowRaise = smirkEase * baseR * 0.18;
+      ctx.beginPath();
+      ctx.moveTo(baseR * 0.14, -baseR * 0.38 - rBrowRaise * 0.4);
+      ctx.quadraticCurveTo(baseR * 0.40, -baseR * 0.62 - rBrowRaise, baseR * 0.66, -baseR * 0.42 - rBrowRaise * 0.65);
+      ctx.stroke();
+
+      // Micro forehead expression crease near cocked brow
+      if (smirkEase > 0.3) {
+        ctx.save();
+        ctx.lineWidth = Math.max(2, baseR * 0.025);
+        ctx.strokeStyle = 'rgba(133, 77, 14, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(baseR * 0.32, -baseR * 0.68 - rBrowRaise * 0.7);
+        ctx.quadraticCurveTo(baseR * 0.44, -baseR * 0.73 - rBrowRaise * 0.8, baseR * 0.54, -baseR * 0.67 - rBrowRaise * 0.7);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. Eyes (Substantially enlarged, almond shape, distinct eyelid creases & iris)
+      const eyeW = baseR * 0.46;
+      const eyeH = baseR * 0.25;
+      const eyeY = -baseR * 0.14;
+      const eyeSpacing = baseR * 0.40;
+
+      [-1, 1].forEach(side => {
+        const eyeX = side * eyeSpacing;
+        ctx.save();
+        ctx.translate(eyeX, eyeY);
+
+        // Upper eyelid fold (pliegue palpebral / crease)
+        ctx.beginPath();
+        ctx.lineWidth = Math.max(2, baseR * 0.025);
+        ctx.strokeStyle = 'rgba(120, 53, 15, 0.6)';
+        ctx.moveTo(-eyeW * 0.46, -eyeH * 0.72);
+        ctx.quadraticCurveTo(0, -eyeH * 1.15, eyeW * 0.46, -eyeH * 0.70);
+        ctx.stroke();
+
+        // Eye Sclera (Almond contour)
+        ctx.beginPath();
+        ctx.moveTo(-eyeW * 0.50, 0);
+        ctx.quadraticCurveTo(0, eyeH * 0.75, eyeW * 0.50, -eyeH * 0.06);
+        ctx.quadraticCurveTo(0, -eyeH * 0.75, -eyeW * 0.50, 0);
+        ctx.closePath();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        ctx.save();
+        ctx.clip();
+
+        // Colored Iris & Pupil (looking sideways to the right: smirk direction)
+        const irisR = eyeH * 0.64;
+        const pupilX = eyeW * 0.22 * smirkEase;
+        const pupilY = 0;
+
+        // Iris radial gradient (hazel/amber depth)
+        const irisGrad = ctx.createRadialGradient(pupilX, pupilY, irisR * 0.2, pupilX, pupilY, irisR);
+        irisGrad.addColorStop(0, '#1c1917');
+        irisGrad.addColorStop(0.55, '#78350f');
+        irisGrad.addColorStop(1, '#451a03');
+
+        ctx.beginPath();
+        ctx.arc(pupilX, pupilY, irisR, 0, Math.PI * 2);
+        ctx.fillStyle = irisGrad;
+        ctx.fill();
+
+        // Jet-black pupil core
+        ctx.beginPath();
+        ctx.arc(pupilX, pupilY, irisR * 0.50, 0, Math.PI * 2);
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+
+        // Primary bright specular reflection glint
+        ctx.beginPath();
+        ctx.arc(pupilX - irisR * 0.32, pupilY - irisR * 0.32, irisR * 0.26, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        // Soft secondary glint
+        ctx.beginPath();
+        ctx.arc(pupilX + irisR * 0.32, pupilY + irisR * 0.32, irisR * 0.14, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+        ctx.fill();
+
+        ctx.restore(); // restore clip
+
+        // Lower eyelid line
+        ctx.beginPath();
+        ctx.moveTo(-eyeW * 0.50, 0);
+        ctx.quadraticCurveTo(0, eyeH * 0.75, eyeW * 0.50, -eyeH * 0.06);
+        ctx.lineWidth = Math.max(2, baseR * 0.028);
+        ctx.strokeStyle = strokeColor;
+        ctx.stroke();
+
+        // Heavy upper eyelid lash line (smug, half-closed look)
+        ctx.beginPath();
+        ctx.moveTo(-eyeW * 0.52, 0);
+        ctx.quadraticCurveTo(0, -eyeH * 0.78, eyeW * 0.52, -eyeH * 0.06);
+        ctx.lineWidth = Math.max(3.8, baseR * 0.052);
+        ctx.strokeStyle = strokeColor;
+        ctx.stroke();
+
+        ctx.restore();
+      });
+
+      // 4. Human Nose Contour (Bridge and nostril wing)
+      ctx.save();
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(2.6, baseR * 0.034);
+      ctx.strokeStyle = '#92400e';
+      ctx.moveTo(baseR * 0.02, -baseR * 0.06);
+      ctx.quadraticCurveTo(-baseR * 0.035, baseR * 0.08, -baseR * 0.025, baseR * 0.13);
+      ctx.quadraticCurveTo(baseR * 0.07, baseR * 0.17, baseR * 0.10, baseR * 0.11);
+      ctx.stroke();
+      ctx.restore();
+
+      // 5. Anatomical Smirk Mouth & Lips (Cupid's bow, full lower lip, lifted right smirk)
+      const mouthY = baseR * 0.48;
+      const mouthW = baseR * 0.38;
+      const smirkLift = smirkEase * baseR * 0.28;
+
+      // Lower lip fullness shadow
+      ctx.save();
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(2.5, baseR * 0.032);
+      ctx.strokeStyle = 'rgba(146, 64, 14, 0.55)';
+      ctx.moveTo(-mouthW * 0.50, mouthY + baseR * 0.12 - smirkLift * 0.3);
+      ctx.quadraticCurveTo(mouthW * 0.10, mouthY + baseR * 0.16 - smirkLift * 0.4, mouthW * 0.60, mouthY + baseR * 0.08 - smirkLift * 0.6);
+      ctx.stroke();
+      ctx.restore();
+
+      // Main smirk mouth line
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(4.2, baseR * 0.06);
+      // Left mouth corner starts lower
+      ctx.moveTo(-mouthW * 0.88, mouthY + baseR * 0.04);
+      // Curves with subtle center dip and curls high into right smirk
+      ctx.quadraticCurveTo(-mouthW * 0.15, mouthY + baseR * 0.09, mouthW * 0.92, mouthY - smirkLift);
+      ctx.stroke();
+
+      // Smirk cheek dimple / nasolabial crease at the elevated right corner
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(3.2, baseR * 0.044);
+      ctx.moveTo(mouthW * 0.82, mouthY - smirkLift - baseR * 0.07);
+      ctx.quadraticCurveTo(mouthW * 1.02, mouthY - smirkLift, mouthW * 0.88, mouthY - smirkLift + baseR * 0.09);
+      ctx.stroke();
+
+      ctx.restore();
+      smirkAnimId = requestAnimationFrame(animate);
+    }
+
+    smirkAnimId = requestAnimationFrame(animate);
+  }
+
   function sendEffect(effectId) {
     if (effectCooldown) {
       displaySystemMessage('Wait to send another effect.', 'clock');
@@ -3568,6 +4081,16 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       triggerDanceEffect();
       displaySystemMessage('You sent a dance.', 'dance');
       startEffectCooldown();
+    } else if (effectId === 'stare') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'stare' }));
+      triggerStareEffect();
+      displaySystemMessage('You sent a stare.', 'stare');
+      startEffectCooldown();
+    } else if (effectId === 'smirk') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'smirk' }));
+      triggerSmirkEffect();
+      displaySystemMessage('You sent a smirk.', 'smirk');
+      startEffectCooldown();
     }
   }
 
@@ -3585,6 +4108,12 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     } else if (effectName === 'dance') {
       triggerDanceEffect();
       displaySystemMessage('Peer sent you a dance!', 'dance');
+    } else if (effectName === 'stare') {
+      triggerStareEffect();
+      displaySystemMessage('Peer sent you a stare!', 'stare');
+    } else if (effectName === 'smirk') {
+      triggerSmirkEffect();
+      displaySystemMessage('Peer sent you a smirk!', 'smirk');
     }
   }
 
@@ -3866,7 +4395,8 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64Data = reader.result;
-      displayUserMessage(base64Data, 'sent', false, null, true);
+      displayUserMessage(base64Data, 'sent', false, null, true, currentReply);
+      clearReply();
 
       const CHUNK_SIZE = 16384;
       const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
