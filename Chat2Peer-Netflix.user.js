@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.12.0
+// @version      1.13.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -93,6 +93,7 @@
   let lastPlayerState = null;
   let currentVideoId = null;
   const DRIFT_THRESHOLD = 2500;
+  const PLAY_DRIFT_THRESHOLD = 5000;
 
   // ── Voice Notes State ──
   let mediaRecorder = null, audioChunks = [], recordTimerInterval = null, recordStartTime = 0;
@@ -389,21 +390,28 @@
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-has-unread{border-color:#e50914;background:rgba(229,9,20,.22);box-shadow:0 4px 16px rgba(229,9,20,.4)}
 #c2p-sidebar .c2p-scroll-bottom-btn svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.5;fill:none;flex-shrink:0}
-#c2p-sidebar .c2p-msg{position:relative;max-width:85%;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
+#c2p-sidebar .c2p-msg{position:relative;max-width:85%;min-width:60px;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
-#c2p-sidebar .c2p-reply-btn{display:none;position:absolute;top:-8px;right:8px;background:#1a1a1a;border:1px solid rgba(255,255,255,.15);color:#aaa;border-radius:10px;padding:2px 7px;font-size:10px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:5;align-items:center;gap:3px;font-family:inherit;transition:all .2s}
-#c2p-sidebar .c2p-reply-btn:hover{color:#fff;border-color:#e50914}
-#c2p-sidebar .c2p-msg.c2p-received:hover .c2p-reply-btn{display:inline-flex}
-#c2p-sidebar .c2p-reply-preview{font-size:11px;padding:3px 7px;margin-bottom:5px;border-radius:4px;background:rgba(0,0,0,.3);border-left:3px solid #e50914;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#c2p-sidebar .c2p-msg.c2p-sent .c2p-reply-preview{border-left-color:rgba(255,255,255,.7);color:rgba(255,255,255,.85)}
-#c2p-sidebar .c2p-reply-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;background:rgba(20,20,20,.95);border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#aaa}
-#c2p-sidebar .c2p-reply-bar-content{display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-#c2p-sidebar .c2p-reply-bar-label{color:#e50914;font-weight:600;flex-shrink:0}
-#c2p-sidebar .c2p-reply-bar-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eee}
-#c2p-sidebar .c2p-reply-bar-close{background:transparent;border:none;color:#888;cursor:pointer;font-size:12px;padding:1px 4px;border-radius:3px;line-height:1}
-#c2p-sidebar .c2p-reply-bar-close:hover{color:#fff;background:rgba(255,255,255,.1)}
+#c2p-sidebar .c2p-reply-btn{opacity:0;pointer-events:none;transform:translateY(2px);position:absolute;top:-10px;right:8px;background:rgba(26,26,26,.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#aaa;border-radius:6px;height:22px;padding:0 7px;font-size:11px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:5;display:inline-flex;align-items:center;gap:4px;font-family:inherit;white-space:nowrap;width:max-content;min-width:max-content;max-width:none;word-break:normal;overflow-wrap:normal;line-height:1;transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease,color .15s ease}
+#c2p-sidebar .c2p-reply-btn svg{flex-shrink:0}
+#c2p-sidebar .c2p-reply-btn span{white-space:nowrap;line-height:1;display:inline}
+#c2p-sidebar .c2p-reply-btn:hover{color:#fff;border-color:rgba(229,9,20,.6);background:rgba(36,36,36,.98)}
+#c2p-sidebar .c2p-msg.c2p-received:hover .c2p-reply-btn,#c2p-sidebar .c2p-msg.c2p-received:focus-within .c2p-reply-btn{opacity:1;pointer-events:auto;transform:translateY(0)}
+#c2p-sidebar .c2p-reply-preview{display:flex;align-items:center;gap:5px;padding:3px 7px;margin-bottom:5px;border-radius:6px;background:rgba(0,0,0,.28);border-left:2px solid #e50914;max-width:100%;overflow:hidden;font-size:11px;line-height:1.35;color:#bbb;white-space:nowrap}
+#c2p-sidebar .c2p-reply-preview svg{flex-shrink:0;color:#ff6b6b}
+#c2p-sidebar .c2p-reply-preview-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#c2p-sidebar .c2p-msg.c2p-sent .c2p-reply-preview{border-left-color:rgba(255,255,255,.7);background:rgba(0,0,0,.18);color:rgba(255,255,255,.8)}
+#c2p-sidebar .c2p-msg.c2p-sent .c2p-reply-preview svg{color:rgba(255,255,255,.85)}
+#c2p-sidebar .c2p-reply-bar{display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(20,20,20,.95);backdrop-filter:blur(8px);border-top:1px solid rgba(255,255,255,.08);animation:c2p-slideUp .18s cubic-bezier(.16,1,.3,1)}
+#c2p-sidebar .c2p-reply-bar-indicator{width:3px;height:24px;border-radius:2px;background:#e50914;flex-shrink:0}
+#c2p-sidebar .c2p-reply-bar-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+#c2p-sidebar .c2p-reply-bar-header{display:inline-flex;align-items:center;gap:3px;color:#ff6b6b;font-size:10px;font-weight:600;line-height:1.2}
+#c2p-sidebar .c2p-reply-bar-header svg{flex-shrink:0}
+#c2p-sidebar .c2p-reply-bar-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eee;font-size:11px;line-height:1.35}
+#c2p-sidebar .c2p-reply-bar-close{background:transparent;border:none;color:#888;cursor:pointer;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:4px;padding:0;flex-shrink:0;transition:background-color .15s ease,color .15s ease}
+#c2p-sidebar .c2p-reply-bar-close:hover{color:#fff;background:rgba(255,255,255,.08)}
 #c2p-sidebar .c2p-msg-author{font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:2px;line-height:1.2;letter-spacing:.02em}
 #c2p-sidebar .c2p-msg.c2p-system{align-self:center;background:transparent;color:#666;font-size:11px;box-shadow:none;border:1px dashed rgba(255,255,255,.08);border-radius:10px;padding:6px 12px;max-width:95%;text-align:center;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
 #c2p-sidebar .c2p-msg.c2p-system svg{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;flex-shrink:0}
@@ -562,6 +570,9 @@
 body.c2p-sidebar-active .watch-video,body.c2p-sidebar-active .watch-video--player-view{width:calc(100vw - 360px)!important;max-width:calc(100vw - 360px)!important;transition:width .35s cubic-bezier(.22,1,.36,1)}
 body.c2p-sidebar-active video{width:100%!important;object-fit:contain!important}
 body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw - 360px)!important;max-width:calc(100vw - 360px)!important}
+[data-uia="playback-speed"],[data-uia*="playback-speed"]:not(button):not(svg):not(path),[data-uia="playback-speed"] ul,[data-uia="playback-speed"] ol,[data-uia="playback-speed"] [role="menu"],[data-uia="playback-speed"] [role="radiogroup"],[data-uia="playback-speed"] > div{display:flex!important;flex-direction:column!important;width:auto!important;min-width:unset!important;max-width:fit-content!important;height:auto!important;align-items:center!important;justify-content:center!important;gap:4px!important;padding:8px 6px!important;box-sizing:border-box!important}
+[data-uia="playback-speed"] button,[data-uia="playback-speed"] li,[data-uia="playback-speed"] [role="menuitem"],[data-uia="playback-speed"] [role="radio"],[data-uia="playback-speed"] [role="button"],[data-uia="playback-speed"] > button,[data-uia="playback-speed"] > div > button{display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-width:48px!important;margin:2px 0!important;padding:6px 12px!important;text-align:center!important;white-space:nowrap!important;box-sizing:border-box!important}
+div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]){width:auto!important;min-width:unset!important;max-width:fit-content!important}
   `);
 
   // ── Build UI ──
@@ -626,11 +637,23 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         </div>
       </div>
       <div id="c2p-reply-bar" class="c2p-reply-bar" style="display:none;">
+        <div class="c2p-reply-bar-indicator"></div>
         <div class="c2p-reply-bar-content">
-          <span class="c2p-reply-bar-label">Replying to:</span>
+          <div class="c2p-reply-bar-header">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3L2 7l4 4"/>
+              <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+            </svg>
+            <span>Replying to</span>
+          </div>
           <span id="c2p-reply-bar-text" class="c2p-reply-bar-text"></span>
         </div>
-        <button id="c2p-reply-bar-close" class="c2p-reply-bar-close" title="Cancel">✕</button>
+        <button id="c2p-reply-bar-close" class="c2p-reply-bar-close" title="Cancel reply" aria-label="Cancel reply">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="4" x2="4" y2="12"/>
+            <line x1="4" y1="4" x2="12" y2="12"/>
+          </svg>
+        </button>
       </div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
@@ -1224,7 +1247,14 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
     if (replyTo) {
       const q = document.createElement('div');
       q.classList.add('c2p-reply-preview');
-      q.textContent = `↳ ${replyTo}`;
+      q.innerHTML = `
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3L2 7l4 4"/>
+          <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+        </svg>
+        <span class="c2p-reply-preview-text"></span>
+      `;
+      q.querySelector('.c2p-reply-preview-text').textContent = replyTo;
       d.appendChild(q);
     }
     if (isGif) {
@@ -1273,7 +1303,13 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
       rb.className = 'c2p-reply-btn';
       rb.type = 'button';
       rb.title = 'Reply';
-      rb.textContent = '↩ Reply';
+      rb.innerHTML = `
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3L2 7l4 4"/>
+          <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+        </svg>
+        <span>Reply</span>
+      `;
       rb.onclick = () => setReply(isGif ? '[GIF]' : isImage ? '[Image]' : content);
       d.appendChild(rb);
     }
@@ -1449,27 +1485,87 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
         };
 
         window.addEventListener('message', function(e) {
-          if (!e.data || e.data.type !== 'C2P_NAVIGATE_EPISODE') return;
-          var targetId = parseInt(e.data.videoId, 10);
-          try {
-            var root = document.querySelector('.watch-video');
-            if (root) {
-              var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
-              if (fiberKey) {
-                var node = root[fiberKey];
-                for (var i = 0; i < 8 && node; i++) {
-                  var api = node.stateNode;
-                  if (api && typeof api.handleSelectorEpisodePlay === 'function') {
-                    console.log('[C2P Bridge] In-page episode change via React Fiber:', targetId);
-                    api.handleSelectorEpisodePlay({ stopPropagation: function() {} }, targetId);
-                    return;
+          if (!e.data) return;
+          if (e.data.type === 'C2P_NAVIGATE_EPISODE') {
+            var targetId = parseInt(e.data.videoId, 10);
+            try {
+              var root = document.querySelector('.watch-video');
+              if (root) {
+                var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
+                if (fiberKey) {
+                  var node = root[fiberKey];
+                  for (var i = 0; i < 8 && node; i++) {
+                    var api = node.stateNode;
+                    if (api && typeof api.handleSelectorEpisodePlay === 'function') {
+                      console.log('[C2P Bridge] In-page episode change via React Fiber:', targetId);
+                      api.handleSelectorEpisodePlay({ stopPropagation: function() {} }, targetId);
+                      return;
+                    }
+                    node = node.return;
                   }
-                  node = node.return;
                 }
               }
+            } catch(err) {
+              console.warn('[C2P Bridge] React Fiber episode change failed:', err);
             }
-          } catch(err) {
-            console.warn('[C2P Bridge] React Fiber episode change failed:', err);
+          } else if (e.data.type === 'C2P_WATCH_CREDITS') {
+            try {
+              var btn = document.querySelector('[data-uia="watch-credits-seamless-button"], [data-uia="watch-credits"], [data-uia*="credits"]')
+                || Array.from(document.querySelectorAll('button, [role="button"], a')).find(function(b) {
+                  return /watch.*credit|ver.*cr[eé]dito/i.test(b.textContent || b.getAttribute('aria-label') || '');
+                });
+              if (btn) {
+                btn.click();
+                return;
+              }
+              var root = document.querySelector('.watch-video');
+              if (root) {
+                var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
+                if (fiberKey) {
+                  var node = root[fiberKey];
+                  for (var i = 0; i < 10 && node; i++) {
+                    var api = node.stateNode;
+                    if (api) {
+                      if (typeof api.handleDismissPostPlay === 'function') { api.handleDismissPostPlay(); return; }
+                      if (typeof api.handleWatchCredits === 'function') { api.handleWatchCredits(); return; }
+                      if (typeof api.dismissPostPlay === 'function') { api.dismissPostPlay(); return; }
+                    }
+                    node = node.return;
+                  }
+                }
+              }
+            } catch(err) {
+              console.warn('[C2P Bridge] Watch credits trigger failed:', err);
+            }
+          } else if (e.data.type === 'C2P_TRIGGER_NEXT_EPISODE') {
+            try {
+              var btn = document.querySelector(
+                '[data-uia="next-episode-seamless-button"], [data-uia="next-episode-seamless-button-draining"], [data-uia="control-next"], [data-uia="postplay-play-button"], .button-nfplayerNextEpisode, [data-uia*="next-episode"]'
+              ) || Array.from(document.querySelectorAll('button, [role="button"], a')).find(function(b) {
+                return /next.*episode|siguiente.*episodio|pr[oó]ximo.*episodio/i.test(b.textContent || b.getAttribute('aria-label') || '');
+              });
+              if (btn) {
+                btn.click();
+                return;
+              }
+              var root = document.querySelector('.watch-video');
+              if (root) {
+                var fiberKey = Object.keys(root).find(function(k) { return k.startsWith('__reactFiber'); });
+                if (fiberKey) {
+                  var node = root[fiberKey];
+                  for (var i = 0; i < 10 && node; i++) {
+                    var api = node.stateNode;
+                    if (api) {
+                      if (typeof api.handlePlayNextEpisode === 'function') { api.handlePlayNextEpisode(); return; }
+                      if (typeof api.handleNextEpisode === 'function') { api.handleNextEpisode(); return; }
+                    }
+                    node = node.return;
+                  }
+                }
+              }
+            } catch(err) {
+              console.warn('[C2P Bridge] Next episode trigger failed:', err);
+            }
           }
         });
       }})();`;
@@ -1617,9 +1713,168 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   })();
 
   let userListenersAttached = false;
+  let lastCreditsClick = 0;
+  let lastNextEpClick = 0;
+
+  function extractNextEpisodeId(btn) {
+    if (!btn) return null;
+    const link = btn.closest('a') || btn.querySelector('a');
+    if (link && link.href) {
+      const m = link.href.match(/\/watch\/(\d+)/);
+      if (m) return m[1];
+    }
+    const elWithId = btn.closest('[data-episode-id], [data-videoid], [data-id]');
+    if (elWithId) {
+      const id = elWithId.getAttribute('data-episode-id') || elWithId.getAttribute('data-videoid') || elWithId.getAttribute('data-id');
+      if (id && /^\d+$/.test(id)) return id;
+    }
+    const card = btn.closest('.postplay, [data-uia*="postplay"], .seamless-control');
+    if (card) {
+      const cardLink = card.querySelector('a[href*="/watch/"]');
+      if (cardLink) {
+        const m = cardLink.href.match(/\/watch\/(\d+)/);
+        if (m) return m[1];
+      }
+    }
+    return null;
+  }
+
+  function handlePlayerInteractionClick(e) {
+    if (!isWatchPage() || suppressBroadcast > 0) return;
+    if (!e.target) return;
+    if (e.target.closest?.('#c2p-sidebar') || e.target.closest?.('#c2p-toggle-btn')) return;
+
+    const now = Date.now();
+
+    // 1. Detect "Watch credits" / "Ver créditos"
+    const creditsBtn = e.target.closest?.(
+      '[data-uia="watch-credits-seamless-button"], [data-uia="watch-credits"], [data-uia*="credits"], [data-uia*="credit"]'
+    ) || (e.target.closest?.('button, [role="button"], a') && /watch.*credit|ver.*cr[eé]dito/i.test(
+      e.target.closest('button, [role="button"], a').textContent ||
+      e.target.closest('button, [role="button"], a').getAttribute('aria-label') || ''
+    ) ? e.target.closest('button, [role="button"], a') : null);
+
+    if (creditsBtn) {
+      if (now - lastCreditsClick < 2500) return;
+      lastCreditsClick = now;
+      console.log('[C2P] User clicked watch credits button');
+      displaySystemMessage('You chose to watch credits', 'play');
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify({
+          type: 'sync',
+          action: 'watch_credits',
+          time: getPlayer()?.getTime() || 0
+        }));
+      }
+      return;
+    }
+
+    // 2. Detect "Next episode" / "Siguiente episodio"
+    const nextBtn = e.target.closest?.(
+      '[data-uia="next-episode-seamless-button"], [data-uia="next-episode-seamless-button-draining"], [data-uia="control-next"], [data-uia="postplay-play-button"], .button-nfplayerNextEpisode, [data-uia*="next-episode"]'
+    ) || (e.target.closest?.('button, [role="button"], a') && /next.*episode|siguiente.*episodio|pr[oó]ximo.*episodio/i.test(
+      e.target.closest('button, [role="button"], a').textContent ||
+      e.target.closest('button, [role="button"], a').getAttribute('aria-label') || ''
+    ) ? e.target.closest('button, [role="button"], a') : null);
+
+    if (nextBtn) {
+      if (now - lastNextEpClick < 2500) return;
+      lastNextEpClick = now;
+      console.log('[C2P] User clicked next episode button');
+      displaySystemMessage('You clicked next episode', 'play');
+
+      const targetVid = extractNextEpisodeId(nextBtn);
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify({
+          type: 'sync',
+          action: 'next_episode',
+          videoId: targetVid
+        }));
+      }
+      return;
+    }
+  }
+
+  function triggerWatchCredits() {
+    suppressBroadcast++;
+    const findAndClickCredits = () => {
+      const btn = document.querySelector(
+        '[data-uia="watch-credits-seamless-button"], [data-uia="watch-credits"], [data-uia*="credits"], [data-uia*="credit"]'
+      ) || Array.from(document.querySelectorAll('button, [role="button"], a')).find(b =>
+        /watch.*credit|ver.*cr[eé]dito/i.test(b.textContent || b.getAttribute('aria-label') || '')
+      );
+      if (btn) {
+        console.log('[C2P] Triggering watch credits in DOM');
+        btn.click();
+        return true;
+      }
+      return false;
+    };
+
+    if (findAndClickCredits()) {
+      wakeNetflixUI();
+      setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 1000);
+      return;
+    }
+
+    // Main world bridge
+    window.postMessage({ type: 'C2P_WATCH_CREDITS' }, '*');
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (findAndClickCredits() || attempts >= 16) {
+        clearInterval(interval);
+        wakeNetflixUI();
+        setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 1000);
+      }
+    }, 250);
+  }
+
+  function triggerNextEpisode(targetId = null) {
+    if (targetId) {
+      changeEpisode(targetId);
+      return;
+    }
+    suppressBroadcast++;
+    const findAndClickNext = () => {
+      const btn = document.querySelector(
+        '[data-uia="next-episode-seamless-button"], [data-uia="next-episode-seamless-button-draining"], [data-uia="control-next"], [data-uia="postplay-play-button"], .button-nfplayerNextEpisode, [data-uia*="next-episode"]'
+      ) || Array.from(document.querySelectorAll('button, [role="button"], a')).find(b =>
+        /next.*episode|siguiente.*episodio|pr[oó]ximo.*episodio/i.test(b.textContent || b.getAttribute('aria-label') || '')
+      );
+      if (btn) {
+        console.log('[C2P] Triggering next episode in DOM');
+        btn.click();
+        return true;
+      }
+      return false;
+    };
+
+    if (findAndClickNext()) {
+      wakeNetflixUI();
+      setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 1500);
+      return;
+    }
+
+    // Main world bridge
+    window.postMessage({ type: 'C2P_TRIGGER_NEXT_EPISODE' }, '*');
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (findAndClickNext() || attempts >= 16) {
+        clearInterval(interval);
+        wakeNetflixUI();
+        setTimeout(() => { suppressBroadcast = Math.max(0, suppressBroadcast - 1); }, 1500);
+      }
+    }, 250);
+  }
+
   function attachUserInteractionListeners() {
     if (userListenersAttached) return;
     userListenersAttached = true;
+    window.addEventListener('click', handlePlayerInteractionClick, true);
     // detect seeks when mouse scrub finishes or keyboard keys release
     window.addEventListener('mouseup', () => { if (isWatchPage()) pollPlayerState(true); });
     window.addEventListener('keyup', (e) => {
@@ -1765,6 +2020,18 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   }
 
   function handleSyncMessage(d) {
+    if (d.action === 'watch_credits') {
+      displaySystemMessage('Peer chose to watch credits', 'play');
+      triggerWatchCredits();
+      return;
+    }
+
+    if (d.action === 'next_episode') {
+      displaySystemMessage('Peer clicked next episode', 'play');
+      triggerNextEpisode(d.videoId);
+      return;
+    }
+
     if (d.action === 'episode') {
       const targetId = String(d.videoId);
       if (targetId && getVideoId() !== targetId) {
@@ -1818,9 +2085,22 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
           p.setPlaybackRate(d.speed);
         }
         const localTime = p.getTime();
-        if (!p.isPaused() && !d.paused && Math.abs(localTime - d.time) > DRIFT_THRESHOLD) {
+        const timeDiff = Math.abs(localTime - d.time);
+
+        if (!p.isPaused() && !d.paused && timeDiff > DRIFT_THRESHOLD) {
           p.seek(d.time);
           wakeNetflixUI();
+        } else if (p.isPaused() && !d.paused && timeDiff >= PLAY_DRIFT_THRESHOLD) {
+          console.log("[C2P] Missed play event detected. Reconciling playback with peer at:", d.time);
+          p.seek(d.time);
+          p.play();
+          wakeNetflixUI();
+          displaySystemMessage('Reconciling playback with peer...', 'play');
+        } else if (!p.isPaused() && d.paused && (localTime - d.time) >= PLAY_DRIFT_THRESHOLD) {
+          console.log("[C2P] Peer is paused while local is playing. Resending play sync:", localTime);
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(JSON.stringify({ type: 'sync', action: 'play', time: localTime }));
+          }
         }
       }
       lastPlayerState = {
@@ -4551,6 +4831,7 @@ body.c2p-sidebar-active .watch-video--bottom-controls-container{width:calc(100vw
   // ── Init ──
   function init() {
     buildSidebar();
+    attachUserInteractionListeners();
     if (!serverUrl) {
       const h = document.getElementById('c2p-setup-hint');
       if (h) { h.innerHTML = '⚠ Click ⚙️ to set Server URL'; h.style.color = '#e50914'; }
