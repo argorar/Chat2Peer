@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.13.0
+// @version      1.14.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -64,9 +64,9 @@
   };
   const EMOJIS = ['🙈','🥰','😂','😲','😭','🔥','🎉','😘','😍','😎'];
   const SOUND_EFFECTS = [
-    { svg: '<path d="M2 10h2M6 6v8M10 3v14M14 7v6M18 9v2M22 10h-2"/>', name: 'Fart', url: 'https://cdn.pixabay.com/audio/2024/07/30/audio_c52f210792.mp3' },
-    { svg: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>', name: 'Kiss', url: 'https://cdn.pixabay.com/audio/2025/02/05/audio_3a6957e546.mp3' },
-    { svg: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>', name: 'Long fart', url: 'https://cdn.pixabay.com/audio/2025/05/01/audio_7be5cc9c12.mp3' },
+    { svg: '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>', name: 'Booh', url: 'https://cdn.pixabay.com/audio/2022/01/18/audio_6102704874.mp3' },
+    { svg: '<path d="M2 12a50.5 50.5 0 0 0 20 0a1 1 0 0 0-1-1"/><path d="M2.457 11.159a1 1 0 0 0-.307 1.369a11.59 11.59 0 0 0 19.7 0a1 1 0 0 0-.308-1.368c-2.426-1.568-3.65-2.284-5.479-3.644a2.6 2.6 0 0 0-3.373.208a1 1 0 0 1-1.38 0a2.62 2.62 0 0 0-3.373-.208c-1.83 1.36-3.053 2.076-5.48 3.643"/>', name: 'Kiss', url: 'https://cdn.pixabay.com/audio/2025/02/05/audio_3a6957e546.mp3' },
+    { svg: '<path d="M2 10h2M6 6v8M10 3v14M14 7v6M18 9v2M22 10h-2"/>', name: 'Fart', url: 'https://cdn.pixabay.com/audio/2025/05/01/audio_7be5cc9c12.mp3' },
     { svg: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>', name: 'Laugh', url: 'https://cdn.pixabay.com/audio/2023/05/11/audio_3f41bc76a6.mp3' },
     { svg: '<circle cx="12" cy="12" r="10"/><path d="M16 16s-1.5-2-4-2-4 2-4 2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/><path d="M7 6l2 2M17 6l-2 2"/>', name: 'Evil', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_6b3f80310f.mp3' },
     { svg: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>', name: 'Claps', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b80daabd57.mp3' },
@@ -79,7 +79,8 @@
     { id: 'tomato', name: 'Tomato Splat', icon: '🍅', title: 'Tomato Splat' },
     { id: 'dance', name: 'Dance', icon: '🕺', title: 'Disco Dance' },
     { id: 'stare', name: 'Stare', icon: '👀', title: 'Stare (Eyes)' },
-    { id: 'smirk', name: 'Smirk', icon: '😏', title: 'Smirk' }
+    { id: 'smirk', name: 'Smirk', icon: '😏', title: 'Smirk' },
+    { id: 'knock', name: 'Knock', icon: '✊', title: 'Knock' }
   ];
 
   // ── Klipy GIF State ──
@@ -1068,6 +1069,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       if (smirkCanvas && smirkCanvas.parentElement !== target) {
         target.appendChild(smirkCanvas);
       }
+      if (knockCanvas && knockCanvas.parentElement !== target) {
+        target.appendChild(knockCanvas);
+      }
       if (!userScrolledUp) {
         scrollToBottom(false);
       }
@@ -1183,7 +1187,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     tomato: '<circle cx="12" cy="13" r="8"/><path d="M12 5v3M9 6l3 2 3-2"/>',
     dance: '<circle cx="12" cy="4" r="2"/><path d="M9 22l3-9 3 9M6 13l6-3 6 3"/>',
     stare: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
-    smirk: '<circle cx="12" cy="12" r="10"/><path d="M8 9.5a2 2 0 0 1 2-1M14 8.5a2 2 0 0 1 2 1M9 16c2 0 5-1 6-3"/>'
+    smirk: '<circle cx="12" cy="12" r="10"/><path d="M8 9.5a2 2 0 0 1 2-1M14 8.5a2 2 0 0 1 2 1M9 16c2 0 5-1 6-3"/>',
+    knock: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>'
   };
   function getSystemIconSvg(type) {
     const p = SYSTEM_ICONS[type];
@@ -1332,7 +1337,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     const i=document.getElementById('c2p-msg-input'),s=document.getElementById('c2p-send-btn'),g=document.getElementById('c2p-gif-btn'),m=document.getElementById('c2p-mic-btn'),n=document.getElementById('c2p-nudge-btn');
     if(i)i.disabled=!on; if(s)s.disabled=!on; if(g)g.disabled=!on; if(m)m.disabled=!on; if(n)n.disabled=!on || nudgeCooldown;
     document.querySelectorAll('#c2p-sidebar .c2p-emoji-btn, #c2p-sidebar .c2p-sfx-btn').forEach(b=>b.disabled=!on);
-    document.querySelectorAll('#c2p-sidebar .c2p-effect-item').forEach(b=>b.disabled=!on || effectCooldown);
+    document.querySelectorAll('#c2p-sidebar .c2p-effect-item').forEach(b => {
+      b.disabled = !on || (b.getAttribute('data-effect') !== 'tomato' && effectCooldown);
+    });
     const wrap = document.getElementById('c2p-effects-wrapper');
     if (wrap) wrap.classList.toggle('c2p-disabled', !on);
   }
@@ -2848,6 +2855,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   const CELEBRATION_AUDIO = 'https://cdn.pixabay.com/audio/2024/07/24/audio_0e85d003fb.mp3';
   const FIREWORKS_AUDIO = 'https://cdn.pixabay.com/audio/2025/10/12/audio_c4109f7a7d.mp3';
   const TOMATO_AUDIO = 'https://cdn.pixabay.com/audio/2026/07/14/audio_3b46788a73.mp3';
+  const KNOCK_AUDIO = 'https://cdn.pixabay.com/audio/2022/03/15/audio_88c919f17b.mp3';
   let effectCooldown = false;
   let confettiAnimId = null;
   let confettiCanvas = null;
@@ -2861,6 +2869,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   let stareCanvas = null;
   let smirkAnimId = null;
   let smirkCanvas = null;
+  let knockAnimId = null;
+  let knockCanvas = null;
 
   function playCelebrationSound() {
     try {
@@ -2882,6 +2892,14 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     try {
       const a = new Audio(TOMATO_AUDIO);
       a.volume = 0.9;
+      a.play().catch(() => {});
+    } catch(e) {}
+  }
+
+  function playKnockSound() {
+    try {
+      const a = new Audio(KNOCK_AUDIO);
+      a.volume = 0.95;
       a.play().catch(() => {});
     } catch(e) {}
   }
@@ -3015,12 +3033,12 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
 
   function startEffectCooldown() {
     effectCooldown = true;
-    const effectBtns = document.querySelectorAll('#c2p-sidebar .c2p-effect-item');
+    const effectBtns = document.querySelectorAll('#c2p-sidebar .c2p-effect-item:not([data-effect="tomato"])');
     effectBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.4'; });
     setTimeout(() => {
       effectCooldown = false;
       if (dataChannel?.readyState === 'open') {
-        effectBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+        document.querySelectorAll('#c2p-sidebar .c2p-effect-item').forEach(b => { b.disabled = false; b.style.opacity = ''; });
       }
     }, 4000);
   }
@@ -4129,20 +4147,19 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       ctx.translate(cx, cy);
       ctx.scale(scale, scale);
 
-      // 1. Human-proportioned Head with Radial Gradient and Soft Ambient Occlusion
-      const headRx = baseR * 0.94;
-      const headRy = baseR * 1.08;
+      // 1. Round Head with Radial Gradient and Soft Ambient Occlusion
+      const headR = baseR;
 
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
       ctx.shadowBlur = 26;
-      const faceGrad = ctx.createRadialGradient(-headRx * 0.3, -headRy * 0.3, baseR * 0.15, 0, 0, headRy);
+      const faceGrad = ctx.createRadialGradient(-headR * 0.3, -headR * 0.3, baseR * 0.15, 0, 0, headR);
       faceGrad.addColorStop(0, '#ffe380');
       faceGrad.addColorStop(0.72, '#ffb703');
       faceGrad.addColorStop(1, '#f77f00');
 
       ctx.beginPath();
-      ctx.ellipse(0, 0, headRx, headRy, 0, 0, Math.PI * 2);
+      ctx.arc(0, 0, headR, 0, Math.PI * 2);
       ctx.fillStyle = faceGrad;
       ctx.fill();
 
@@ -4157,7 +4174,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       ctx.fillStyle = 'rgba(239, 68, 68, 0.14)';
       [-1, 1].forEach(side => {
         ctx.beginPath();
-        ctx.ellipse(side * headRx * 0.55, baseR * 0.14, baseR * 0.22, baseR * 0.12, side * 0.1, 0, Math.PI * 2);
+        ctx.ellipse(side * headR * 0.55, baseR * 0.14, baseR * 0.22, baseR * 0.12, side * 0.1, 0, Math.PI * 2);
         ctx.fill();
       });
       ctx.restore();
@@ -4334,8 +4351,296 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     smirkAnimId = requestAnimationFrame(animate);
   }
 
+  function triggerKnockEffect() {
+    playKnockSound();
+    const container = getEffectContainer();
+    if (!container) return;
+
+    if (!knockCanvas) {
+      knockCanvas = document.createElement('canvas');
+      knockCanvas.className = 'c2p-knock-canvas';
+      knockCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483645;';
+      container.appendChild(knockCanvas);
+    } else if (knockCanvas.parentElement !== container) {
+      container.appendChild(knockCanvas);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    knockCanvas.width = Math.floor(w * dpr);
+    knockCanvas.height = Math.floor(h * dpr);
+    const ctx = knockCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    if (knockAnimId) cancelAnimationFrame(knockAnimId);
+    const startTime = performance.now();
+    const knockTimes = [100, 300, 535];
+
+    function drawRoundedRect(c, x, y, rw, rh, r) {
+      if (typeof r === 'number') r = [r, r, r, r];
+      const tl = r[0], tr = r[1], br = r[2], bl = r[3];
+      c.beginPath();
+      c.moveTo(x + tl, y);
+      c.lineTo(x + rw - tr, y);
+      c.arcTo(x + rw, y, x + rw, y + tr, tr);
+      c.lineTo(x + rw, y + rh - br);
+      c.arcTo(x + rw, y + rh, x + rw - br, y + rh, br);
+      c.lineTo(x + bl, y + rh);
+      c.arcTo(x, y + rh, x, y + rh - bl, bl);
+      c.lineTo(x, y + tl);
+      c.arcTo(x, y, x + tl, y, tl);
+      c.closePath();
+    }
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      ctx.clearRect(0, 0, w, h);
+
+      if (elapsed > 1550) {
+        if (knockCanvas) {
+          knockCanvas.remove();
+          knockCanvas = null;
+        }
+        knockAnimId = null;
+        return;
+      }
+
+      // Entrance (0-90ms) & exit (1100-1500ms) fade & subtle scale
+      let alpha = 1;
+      let scaleMod = 1;
+      if (elapsed < 90) {
+        const p = Math.max(0, elapsed / 90);
+        alpha = p;
+        scaleMod = 0.88 + 0.12 * p;
+      } else if (elapsed > 1100) {
+        const p = Math.min(1, (elapsed - 1100) / 400);
+        alpha = Math.max(0, 1 - p);
+        scaleMod = 1 - 0.04 * p;
+      }
+
+      // Micro-shake on knock impact
+      let shakeX = 0, shakeY = 0;
+      for (let i = 0; i < knockTimes.length; i++) {
+        const dt = elapsed - knockTimes[i];
+        if (dt >= 0 && dt < 80) {
+          const decay = 1 - dt / 80;
+          const mag = (i === 2 ? 6 : 4) * decay;
+          shakeX = Math.sin(dt * 0.4) * mag;
+          shakeY = Math.cos(dt * 0.3) * (mag * 0.5);
+          break;
+        }
+      }
+
+      const scale = Math.max(0.7, Math.min(Math.min(w, h) / 520, 1.35)) * scaleMod;
+      const doorW = 210 * scale;
+      const doorH = 340 * scale;
+      const doorX = (w - doorW) / 2 + shakeX;
+      const doorY = (h - doorH) / 2 + shakeY;
+      const impactX = doorX + doorW * 0.50;
+      const impactY = doorY + doorH * 0.36;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      // ── 1. Door Frame (outer dark wood trim) ──
+      const framePadX = 14 * scale;
+      const framePadTop = 14 * scale;
+      const frameX = doorX - framePadX;
+      const frameY = doorY - framePadTop;
+      const frameW = doorW + framePadX * 2;
+      const frameH = doorH + framePadTop;
+
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+      ctx.shadowBlur = 24 * scale;
+      ctx.shadowOffsetY = 12 * scale;
+
+      ctx.fillStyle = '#3e1d08';
+      drawRoundedRect(ctx, frameX, frameY, frameW, frameH, [10 * scale, 10 * scale, 0, 0]);
+      ctx.fill();
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      ctx.strokeStyle = '#271103';
+      ctx.lineWidth = 2.5 * scale;
+      ctx.stroke();
+
+      // ── 2. Door Slab (warm brown wood gradient) ──
+      const doorGrad = ctx.createLinearGradient(doorX, doorY, doorX + doorW, doorY + doorH);
+      doorGrad.addColorStop(0, '#965223');
+      doorGrad.addColorStop(0.45, '#783a13');
+      doorGrad.addColorStop(1, '#54260a');
+      ctx.fillStyle = doorGrad;
+      drawRoundedRect(ctx, doorX, doorY, doorW, doorH, [6 * scale, 6 * scale, 0, 0]);
+      ctx.fill();
+      ctx.strokeStyle = '#321303';
+      ctx.lineWidth = 2 * scale;
+      ctx.stroke();
+
+      // ── 3. Four Recessed Wood Panels ──
+      const panelMarginX = 16 * scale;
+      const panelGapX = 12 * scale;
+      const panelW = (doorW - panelMarginX * 2 - panelGapX) / 2;
+      const panelMarginTop = 18 * scale;
+      const panelH1 = doorH * 0.38;
+      const panelGapY = 14 * scale;
+      const panelH2 = doorH * 0.44;
+
+      const panels = [
+        { x: doorX + panelMarginX, y: doorY + panelMarginTop, w: panelW, h: panelH1 },
+        { x: doorX + panelMarginX + panelW + panelGapX, y: doorY + panelMarginTop, w: panelW, h: panelH1 },
+        { x: doorX + panelMarginX, y: doorY + panelMarginTop + panelH1 + panelGapY, w: panelW, h: panelH2 },
+        { x: doorX + panelMarginX + panelW + panelGapX, y: doorY + panelMarginTop + panelH1 + panelGapY, w: panelW, h: panelH2 }
+      ];
+
+      for (let i = 0; i < panels.length; i++) {
+        const p = panels[i];
+        const pGrad = ctx.createLinearGradient(p.x, p.y, p.x + p.w, p.y + p.h);
+        pGrad.addColorStop(0, '#5a270c');
+        pGrad.addColorStop(0.5, '#6f320e');
+        pGrad.addColorStop(1, '#843d14');
+        ctx.fillStyle = pGrad;
+        drawRoundedRect(ctx, p.x, p.y, p.w, p.h, 4 * scale);
+        ctx.fill();
+
+        // 3D beveled edges (dark inset top/left, soft highlight bottom/right)
+        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(15, 6, 2, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.w, p.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.lineTo(p.x, p.y + p.h);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255, 215, 185, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y + p.h);
+        ctx.lineTo(p.x + p.w, p.y + p.h);
+        ctx.lineTo(p.x + p.w, p.y);
+        ctx.stroke();
+      }
+
+      // ── 4. Brass Doorknob ──
+      const knobX = doorX + doorW - 20 * scale;
+      const knobY = doorY + doorH * 0.55;
+      const knobR = 10 * scale;
+
+      // Knob backplate
+      ctx.fillStyle = '#78350f';
+      drawRoundedRect(ctx, knobX - 5 * scale, knobY - 14 * scale, 10 * scale, 28 * scale, 3 * scale);
+      ctx.fill();
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 1 * scale;
+      ctx.stroke();
+
+      // Keyhole under knob
+      ctx.fillStyle = '#1c0a02';
+      ctx.beginPath();
+      ctx.arc(knobX, knobY + 6 * scale, 1.8 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(knobX - 1.2 * scale, knobY + 6 * scale, 2.4 * scale, 3.5 * scale);
+
+      // Gold / brass knob sphere
+      const knobGrad = ctx.createRadialGradient(
+        knobX - knobR * 0.35, knobY - knobR * 0.35, knobR * 0.1,
+        knobX, knobY, knobR
+      );
+      knobGrad.addColorStop(0, '#fef08a');
+      knobGrad.addColorStop(0.3, '#fbbf24');
+      knobGrad.addColorStop(0.7, '#d97706');
+      knobGrad.addColorStop(1, '#78350f');
+      ctx.fillStyle = knobGrad;
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, knobR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 1.2 * scale;
+      ctx.stroke();
+
+      // ── 5. Sound Effects (Ondas y efectos de sonido en cada knock) ──
+      for (let i = 0; i < knockTimes.length; i++) {
+        const kt = knockTimes[i];
+        const dt = elapsed - kt;
+        if (dt >= 0 && dt < 500) {
+          const pulse = dt / 500;
+          const maxArcR = (i === 2 ? 155 : 125) * scale;
+          const swAlpha = Math.max(0, (1 - pulse) * (i === 2 ? 1 : 0.85));
+
+          // a) Impact burst flash (first 80ms)
+          if (dt < 80) {
+            const flashP = dt / 80;
+            const flashR = (10 + flashP * 12) * scale;
+            const fAlpha = (1 - flashP) * swAlpha;
+            ctx.save();
+            ctx.fillStyle = `rgba(255, 255, 255, ${fAlpha * 0.9})`;
+            ctx.beginPath();
+            ctx.arc(impactX, impactY, flashR * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = `rgba(254, 240, 138, ${fAlpha * 0.5})`;
+            ctx.beginPath();
+            ctx.arc(impactX, impactY, flashR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // b) Acoustic sound wave arcs (((( • ))))
+          const arcR1 = pulse * maxArcR;
+          ctx.save();
+          ctx.lineCap = 'round';
+
+          if (arcR1 > 12 * scale) {
+            ctx.lineWidth = 4 * (1 - pulse * 0.6) * scale;
+            ctx.strokeStyle = `rgba(253, 224, 71, ${swAlpha * 0.95})`;
+            // Right acoustic arc
+            ctx.beginPath();
+            ctx.arc(impactX, impactY, arcR1, -Math.PI * 0.28, Math.PI * 0.28);
+            ctx.stroke();
+            // Left acoustic arc
+            ctx.beginPath();
+            ctx.arc(impactX, impactY, arcR1, Math.PI * 0.72, Math.PI * 1.28);
+            ctx.stroke();
+          }
+
+          // Secondary trailing acoustic arcs
+          if (pulse > 0.15) {
+            const p2 = (pulse - 0.15) / 0.85;
+            const arcR2 = p2 * maxArcR * 0.75;
+            if (arcR2 > 10 * scale) {
+              ctx.lineWidth = 3 * (1 - p2 * 0.5) * scale;
+              ctx.strokeStyle = `rgba(254, 240, 138, ${swAlpha * 0.75})`;
+              ctx.beginPath();
+              ctx.arc(impactX, impactY, arcR2, -Math.PI * 0.26, Math.PI * 0.26);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.arc(impactX, impactY, arcR2, Math.PI * 0.74, Math.PI * 1.26);
+              ctx.stroke();
+            }
+          }
+
+          // Subtle concentric circular ripple ring
+          ctx.lineWidth = 2 * (1 - pulse * 0.7) * scale;
+          ctx.strokeStyle = `rgba(250, 204, 21, ${swAlpha * 0.35})`;
+          ctx.beginPath();
+          ctx.arc(impactX, impactY, arcR1 * 0.95, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+
+      knockAnimId = requestAnimationFrame(animate);
+    }
+
+    knockAnimId = requestAnimationFrame(animate);
+  }
+
   function sendEffect(effectId) {
-    if (effectCooldown) {
+    if (effectId !== 'tomato' && effectCooldown) {
       displaySystemMessage('Wait to send another effect.', 'clock');
       return;
     }
@@ -4355,7 +4660,6 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       dataChannel.send(JSON.stringify({ type: 'effect', name: 'tomato' }));
       triggerTomatoEffect();
       displaySystemMessage('You sent a tomato splat.', 'tomato');
-      startEffectCooldown();
     } else if (effectId === 'dance') {
       dataChannel.send(JSON.stringify({ type: 'effect', name: 'dance' }));
       triggerDanceEffect();
@@ -4370,6 +4674,11 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       dataChannel.send(JSON.stringify({ type: 'effect', name: 'smirk' }));
       triggerSmirkEffect();
       displaySystemMessage('You sent a smirk.', 'smirk');
+      startEffectCooldown();
+    } else if (effectId === 'knock') {
+      dataChannel.send(JSON.stringify({ type: 'effect', name: 'knock' }));
+      triggerKnockEffect();
+      displaySystemMessage('You sent a knock.', 'knock');
       startEffectCooldown();
     }
   }
@@ -4394,6 +4703,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     } else if (effectName === 'smirk') {
       triggerSmirkEffect();
       displaySystemMessage('Peer sent you a smirk!', 'smirk');
+    } else if (effectName === 'knock') {
+      triggerKnockEffect();
+      displaySystemMessage('Peer sent you a knock!', 'knock');
     }
   }
 
