@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.14.0
+// @version      1.15.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -395,11 +395,13 @@
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
-#c2p-sidebar .c2p-reply-btn{opacity:0;pointer-events:none;transform:translateY(2px);position:absolute;top:-10px;right:8px;background:rgba(26,26,26,.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#aaa;border-radius:6px;height:22px;padding:0 7px;font-size:11px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:5;display:inline-flex;align-items:center;gap:4px;font-family:inherit;white-space:nowrap;width:max-content;min-width:max-content;max-width:none;word-break:normal;overflow-wrap:normal;line-height:1;transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease,color .15s ease}
-#c2p-sidebar .c2p-reply-btn svg{flex-shrink:0}
-#c2p-sidebar .c2p-reply-btn span{white-space:nowrap;line-height:1;display:inline}
-#c2p-sidebar .c2p-reply-btn:hover{color:#fff;border-color:rgba(229,9,20,.6);background:rgba(36,36,36,.98)}
+#c2p-sidebar .c2p-reply-btn,#c2p-sidebar .c2p-edit-btn{opacity:0;pointer-events:none;transform:translateY(2px);position:absolute;top:-10px;right:8px;background:rgba(26,26,26,.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#aaa;border-radius:6px;height:22px;padding:0 7px;font-size:11px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:5;display:inline-flex;align-items:center;gap:4px;font-family:inherit;white-space:nowrap;width:max-content;min-width:max-content;max-width:none;word-break:normal;overflow-wrap:normal;line-height:1;transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease,color .15s ease}
+#c2p-sidebar .c2p-reply-btn svg,#c2p-sidebar .c2p-edit-btn svg{flex-shrink:0}
+#c2p-sidebar .c2p-reply-btn span,#c2p-sidebar .c2p-edit-btn span{white-space:nowrap;line-height:1;display:inline}
+#c2p-sidebar .c2p-reply-btn:hover,#c2p-sidebar .c2p-edit-btn:hover{color:#fff;border-color:rgba(229,9,20,.6);background:rgba(36,36,36,.98)}
 #c2p-sidebar .c2p-msg.c2p-received:hover .c2p-reply-btn,#c2p-sidebar .c2p-msg.c2p-received:focus-within .c2p-reply-btn{opacity:1;pointer-events:auto;transform:translateY(0)}
+#c2p-sidebar .c2p-msg.c2p-sent:hover .c2p-edit-btn,#c2p-sidebar .c2p-msg.c2p-sent:focus-within .c2p-edit-btn{opacity:1;pointer-events:auto;transform:translateY(0)}
+#c2p-sidebar .c2p-edited-tag{font-size:10px;opacity:.7;font-style:italic;margin-left:4px}
 #c2p-sidebar .c2p-reply-preview{display:flex;align-items:center;gap:5px;padding:3px 7px;margin-bottom:5px;border-radius:6px;background:rgba(0,0,0,.28);border-left:2px solid #e50914;max-width:100%;overflow:hidden;font-size:11px;line-height:1.35;color:#bbb;white-space:nowrap}
 #c2p-sidebar .c2p-reply-preview svg{flex-shrink:0;color:#ff6b6b}
 #c2p-sidebar .c2p-reply-preview-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -656,6 +658,24 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
           </svg>
         </button>
       </div>
+      <div id="c2p-edit-bar" class="c2p-reply-bar" style="display:none;">
+        <div class="c2p-reply-bar-indicator" style="background:#3b82f6;"></div>
+        <div class="c2p-reply-bar-content">
+          <div class="c2p-reply-bar-header" style="color:#60a5fa;">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H2v-3L10.5 1.5z"/>
+            </svg>
+            <span>Editing message</span>
+          </div>
+          <span id="c2p-edit-bar-text" class="c2p-reply-bar-text"></span>
+        </div>
+        <button id="c2p-edit-bar-close" class="c2p-reply-bar-close" title="Cancel edit" aria-label="Cancel edit">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="4" x2="4" y2="12"/>
+            <line x1="4" y1="4" x2="12" y2="12"/>
+          </svg>
+        </button>
+      </div>
       <div class="c2p-input-area">
         <div class="c2p-recording-bar" id="c2p-recording-bar" style="display:none;">
           <span class="c2p-record-dot"></span>
@@ -893,6 +913,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     const replyCloseBtn = document.getElementById('c2p-reply-bar-close');
     if (replyCloseBtn) replyCloseBtn.addEventListener('click', clearReply);
 
+    const editCloseBtn = document.getElementById('c2p-edit-bar-close');
+    if (editCloseBtn) editCloseBtn.addEventListener('click', clearEditing);
+
     const previewSendBtn = document.getElementById('c2p-preview-send-btn');
     if (previewSendBtn) previewSendBtn.addEventListener('click', () => {
       sendPendingImage();
@@ -903,7 +926,26 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     msgInput.addEventListener('keydown', e => {
       e.stopPropagation();
       if (e.key === 'Escape') {
-        clearReply();
+        if (editingMsg) {
+          clearEditing();
+          msgInput.value = '';
+        } else {
+          clearReply();
+        }
+      } else if (e.key === 'ArrowUp' && !msgInput.value.trim() && !editingMsg) {
+        const sentMsgs = document.querySelectorAll('.c2p-msg.c2p-sent[data-msg-id]');
+        for (let idx = sentMsgs.length - 1; idx >= 0; idx--) {
+          const m = sentMsgs[idx];
+          const textEl = m.querySelector('.c2p-msg-text');
+          if (textEl && !m.querySelector('.c2p-gif-wrap, .c2p-image-wrap')) {
+            const editBtn = m.querySelector('.c2p-edit-btn');
+            if (editBtn) {
+              editBtn.click();
+              e.preventDefault();
+              break;
+            }
+          }
+        }
       } else if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         if (pendingImageBlob) {
@@ -1188,7 +1230,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     dance: '<circle cx="12" cy="4" r="2"/><path d="M9 22l3-9 3 9M6 13l6-3 6 3"/>',
     stare: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     smirk: '<circle cx="12" cy="12" r="10"/><path d="M8 9.5a2 2 0 0 1 2-1M14 8.5a2 2 0 0 1 2 1M9 16c2 0 5-1 6-3"/>',
-    knock: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>'
+    knock: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>',
+    pip: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><rect x="11" y="9" width="9" height="6" rx="1" ry="1"/>'
   };
   function getSystemIconSvg(type) {
     const p = SYSTEM_ICONS[type];
@@ -1229,6 +1272,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   }
   let currentReply = null;
   function setReply(text) {
+    clearEditing();
     currentReply = text;
     const bar = document.getElementById('c2p-reply-bar');
     const txt = document.getElementById('c2p-reply-bar-text');
@@ -1247,8 +1291,55 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       txt.textContent = '';
     }
   }
-  function displayUserMessage(content, type, isGif = false, author = null, isImage = false, replyTo = null) {
+
+  let editingMsg = null;
+  function setEditing(id, text) {
+    if (!id) return;
+    clearReply();
+    editingMsg = { id, originalContent: text };
+    const bar = document.getElementById('c2p-edit-bar');
+    const txt = document.getElementById('c2p-edit-bar-text');
+    if (bar && txt) {
+      txt.textContent = text;
+      bar.style.display = 'flex';
+    }
+    const input = document.getElementById('c2p-msg-input');
+    if (input) {
+      input.value = text;
+      focusMsgInput();
+      try { input.setSelectionRange(text.length, text.length); } catch(e){}
+    }
+  }
+  function clearEditing() {
+    editingMsg = null;
+    const bar = document.getElementById('c2p-edit-bar');
+    const txt = document.getElementById('c2p-edit-bar-text');
+    if (bar && txt) {
+      bar.style.display = 'none';
+      txt.textContent = '';
+    }
+  }
+  function applyMessageEdit(id, newContent) {
+    const el = document.querySelector(`.c2p-msg[data-msg-id="${id}"]`);
+    if (!el) return;
+    const textWrap = el.querySelector('.c2p-msg-text') || el;
+    let editedTag = el.querySelector('.c2p-edited-tag');
+    textWrap.textContent = newContent;
+    if (!editedTag) {
+      editedTag = document.createElement('span');
+      editedTag.className = 'c2p-edited-tag';
+      editedTag.textContent = ' (edited)';
+    }
+    textWrap.appendChild(editedTag);
+    const editBtn = el.querySelector('.c2p-edit-btn');
+    if (editBtn) {
+      editBtn.onclick = () => setEditing(id, newContent);
+    }
+  }
+
+  function displayUserMessage(content, type, isGif = false, author = null, isImage = false, replyTo = null, msgId = null) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
+    if (msgId) d.dataset.msgId = msgId;
     if (replyTo) {
       const q = document.createElement('div');
       q.classList.add('c2p-reply-preview');
@@ -1300,6 +1391,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
         d.appendChild(authEl);
       }
       const textEl = document.createElement('div');
+      textEl.className = 'c2p-msg-text';
       textEl.textContent = content;
       d.appendChild(textEl);
     }
@@ -1317,6 +1409,19 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       `;
       rb.onclick = () => setReply(isGif ? '[GIF]' : isImage ? '[Image]' : content);
       d.appendChild(rb);
+    } else if (type === 'sent' && !isGif && !isImage && msgId) {
+      const eb = document.createElement('button');
+      eb.className = 'c2p-edit-btn';
+      eb.type = 'button';
+      eb.title = 'Edit';
+      eb.innerHTML = `
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H2v-3L10.5 1.5z"/>
+        </svg>
+        <span>Edit</span>
+      `;
+      eb.onclick = () => setEditing(msgId, content);
+      d.appendChild(eb);
     }
     appendMsg(d);
   }
@@ -1448,6 +1553,43 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     const c = document.querySelector('.VideoContainer') || document.querySelector('.watch-video');
     if (c) {
       c.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 100, clientY: 100 }));
+    }
+  }
+
+  // ── Picture-in-Picture ──
+  function enablePiPOnVideo(v) {
+    if (!v) return;
+    if (v.hasAttribute('disablepictureinpicture')) {
+      v.removeAttribute('disablepictureinpicture');
+    }
+    if (v.disablePictureInPicture) {
+      try {
+        Object.defineProperty(v, 'disablePictureInPicture', {
+          get: () => false,
+          set: () => {},
+          configurable: true
+        });
+      } catch (e) {
+        v.disablePictureInPicture = false;
+      }
+    }
+  }
+
+  async function togglePictureInPicture() {
+    const v = document.querySelector('.watch-video video') || (isWatchPage() ? document.querySelector('video') : null);
+    if (!v) return;
+    enablePiPOnVideo(v);
+
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled || v.requestPictureInPicture) {
+        await v.requestPictureInPicture();
+      } else {
+        displaySystemMessage('Picture-in-Picture not supported in this browser', 'warn');
+      }
+    } catch (err) {
+      console.warn('[C2P] Picture-in-Picture error:', err);
     }
   }
 
@@ -1884,6 +2026,14 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     window.addEventListener('click', handlePlayerInteractionClick, true);
     // detect seeks when mouse scrub finishes or keyboard keys release
     window.addEventListener('mouseup', () => { if (isWatchPage()) pollPlayerState(true); });
+    window.addEventListener('keydown', (e) => {
+      if (!isWatchPage()) return;
+      if (e.target && (e.target.closest?.('#c2p-sidebar') || ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable)) return;
+      if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        togglePictureInPicture();
+      }
+    });
     window.addEventListener('keyup', (e) => {
       if (!isWatchPage()) return;
       if (e.target && (e.target.closest?.('#c2p-sidebar') || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -2504,7 +2654,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
         if (d.type === 'peer_disconnected') handlePeerDisconnected();
         else if (d.type === 'sync') handleSyncMessage(d);
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
-        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname, false, d.replyTo); }
+        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname, false, d.replyTo, d.id); }
+        else if (d.type === 'edit_text') { applyMessageEdit(d.id, d.content); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
         else if (d.type === 'sfx') {
           playSoundEffect(d.idx);
@@ -2564,6 +2715,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
 
   function resetWebRTC() {
     clearReply();
+    clearEditing();
     if (disconnectGraceTimer) {
       clearTimeout(disconnectGraceTimer);
       disconnectGraceTimer = null;
@@ -2725,15 +2877,28 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     const i = document.getElementById('c2p-msg-input');
     if (!i) return;
     const t = i.value.trim();
-    if (t && dataChannel?.readyState === 'open') {
+    if (!t) return;
+
+    if (editingMsg) {
+      if (t !== editingMsg.originalContent && dataChannel?.readyState === 'open') {
+        applyMessageEdit(editingMsg.id, t);
+        dataChannel.send(JSON.stringify({ type: 'edit_text', id: editingMsg.id, content: t }));
+      }
+      i.value = '';
+      clearEditing();
+      return;
+    }
+
+    if (dataChannel?.readyState === 'open') {
       if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
       if (isTypingLocally) { isTypingLocally = false; sendTypingStatus(false); }
-      const payload = { type: 'text', content: t, replyTo: currentReply };
+      const msgId = 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const payload = { type: 'text', id: msgId, content: t, replyTo: currentReply };
       if (nickname && nickname.trim()) {
         payload.nickname = nickname.trim();
       }
       dataChannel.send(JSON.stringify(payload));
-      displayUserMessage(t, 'sent', false, null, false, currentReply);
+      displayUserMessage(t, 'sent', false, null, false, currentReply, msgId);
       i.value = '';
       clearReply();
     }

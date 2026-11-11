@@ -222,7 +222,9 @@ body {
 }
 
 .message {
+    position: relative;
     max-width: 80%;
+    min-width: 64px;
     padding: 14px 20px;
     border-radius: 20px;
     font-size: 0.95rem;
@@ -265,6 +267,191 @@ body {
     border: 1px dashed var(--panel-border);
     border-radius: 12px;
     padding: 8px 16px;
+}
+
+.reply-btn,
+.edit-btn {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(2px);
+    position: absolute;
+    top: -12px;
+    right: 8px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: inherit;
+    white-space: nowrap;
+    width: max-content;
+    min-width: max-content;
+    max-width: none;
+    word-break: normal;
+    overflow-wrap: normal;
+    line-height: 1;
+    transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reply-btn svg,
+.edit-btn svg {
+    flex-shrink: 0;
+}
+
+.reply-btn span,
+.edit-btn span {
+    white-space: nowrap;
+    line-height: 1;
+    display: inline;
+}
+
+.reply-btn:hover,
+.edit-btn:hover {
+    color: var(--text-primary);
+    border-color: rgba(59, 130, 246, 0.6);
+    background: rgba(30, 41, 59, 0.98);
+}
+
+.message.received:hover .reply-btn,
+.message.received:focus-within .reply-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.message.sent:hover .edit-btn,
+.message.sent:focus-within .edit-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.edited-tag {
+    font-size: 0.7rem;
+    opacity: 0.7;
+    font-style: italic;
+    margin-left: 4px;
+}
+
+.reply-preview {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.22);
+    border-left: 2px solid var(--accent-color);
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.reply-preview svg {
+    flex-shrink: 0;
+    color: var(--accent-color);
+}
+
+.reply-preview-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message.sent .reply-preview {
+    border-left-color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.16);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.message.sent .reply-preview svg {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Reply Bar */
+.reply-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 32px;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--panel-border);
+    animation: slideUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reply-bar-indicator {
+    width: 3px;
+    height: 28px;
+    border-radius: 2px;
+    background: var(--accent-color);
+    flex-shrink: 0;
+}
+
+.reply-bar-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.reply-bar-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent-color);
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.reply-bar-header svg {
+    flex-shrink: 0;
+}
+
+.reply-bar-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    line-height: 1.35;
+    opacity: 0.9;
+}
+
+.reply-bar-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.reply-bar-close:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 /* Input Area */

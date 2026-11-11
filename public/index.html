@@ -47,6 +47,45 @@
             <button class="emoji-btn" data-emoji="😎">😎</button>
         </div>
 
+        <div id="reply-bar" class="reply-bar" style="display: none;">
+            <div class="reply-bar-indicator"></div>
+            <div class="reply-bar-content">
+                <div class="reply-bar-header">
+                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 3L2 7l4 4"/>
+                        <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+                    </svg>
+                    <span>Replying to</span>
+                </div>
+                <div id="reply-bar-text" class="reply-bar-text"></div>
+            </div>
+            <button id="cancel-reply-btn" class="reply-bar-close" title="Cancel reply" aria-label="Cancel reply">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="4" x2="4" y2="12"/>
+                    <line x1="4" y1="4" x2="12" y2="12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="edit-bar" class="reply-bar" style="display: none;">
+            <div class="reply-bar-indicator" style="background: var(--accent-primary, #3b82f6);"></div>
+            <div class="reply-bar-content">
+                <div class="reply-bar-header" style="color: var(--accent-primary, #60a5fa);">
+                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H2v-3L10.5 1.5z"/>
+                    </svg>
+                    <span>Editing message</span>
+                </div>
+                <div id="edit-bar-text" class="reply-bar-text"></div>
+            </div>
+            <button id="cancel-edit-btn" class="reply-bar-close" title="Cancel edit" aria-label="Cancel edit">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="4" x2="4" y2="12"/>
+                    <line x1="4" y1="4" x2="12" y2="12"/>
+                </svg>
+            </button>
+        </div>
+
         <div class="chat-input-area">
             <input type="text" id="message-input" placeholder="Type an encrypted message..." disabled
                 autocomplete="off">

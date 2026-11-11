@@ -17,6 +17,84 @@ const klipySearch = document.getElementById('klipy-search');
 const klipyClose = document.getElementById('klipy-close');
 const klipyResults = document.getElementById('klipy-results');
 
+// Reply & Edit Elements
+const replyBar = document.getElementById('reply-bar');
+const replyBarText = document.getElementById('reply-bar-text');
+const cancelReplyBtn = document.getElementById('cancel-reply-btn');
+let currentReply = null;
+
+const editBar = document.getElementById('edit-bar');
+const editBarText = document.getElementById('edit-bar-text');
+const cancelEditBtn = document.getElementById('cancel-edit-btn');
+let editingMsg = null;
+
+function setReply(text) {
+    clearEditing();
+    currentReply = text;
+    if (replyBar && replyBarText) {
+        replyBarText.textContent = text;
+        replyBar.style.display = 'flex';
+    }
+    messageInput.focus();
+}
+
+function clearReply() {
+    currentReply = null;
+    if (replyBar && replyBarText) {
+        replyBar.style.display = 'none';
+        replyBarText.textContent = '';
+    }
+}
+
+function setEditing(id, text) {
+    if (!id) return;
+    clearReply();
+    editingMsg = { id, originalContent: text };
+    if (editBar && editBarText) {
+        editBarText.textContent = text;
+        editBar.style.display = 'flex';
+    }
+    messageInput.value = text;
+    messageInput.focus();
+    try { messageInput.setSelectionRange(text.length, text.length); } catch (e) {}
+}
+
+function clearEditing() {
+    editingMsg = null;
+    if (editBar && editBarText) {
+        editBar.style.display = 'none';
+        editBarText.textContent = '';
+    }
+}
+
+function applyMessageEdit(id, newContent) {
+    const el = document.querySelector(`.message[data-msg-id="${id}"]`);
+    if (!el) return;
+    const textWrap = el.querySelector('.msg-text') || el;
+    let editedTag = el.querySelector('.edited-tag');
+    textWrap.textContent = newContent;
+    if (!editedTag) {
+        editedTag = document.createElement('span');
+        editedTag.className = 'edited-tag';
+        editedTag.textContent = ' (editado)';
+    }
+    textWrap.appendChild(editedTag);
+    const editBtn = el.querySelector('.edit-btn');
+    if (editBtn) {
+        editBtn.onclick = () => setEditing(id, newContent);
+    }
+}
+
+if (cancelReplyBtn) {
+    cancelReplyBtn.addEventListener('click', clearReply);
+}
+if (cancelEditBtn) {
+    cancelEditBtn.addEventListener('click', () => {
+        clearEditing();
+        messageInput.value = '';
+    });
+}
+
 let ws;
 let peerConnection;
 let dataChannel;
@@ -37,6 +115,9 @@ let isIntentionalDisconnect = false;
 let isNegotiating = false;
 let lastOfferReceived = 0;
 let autoReconnectTimer = null;
+let disconnectGraceTimer = null;
+let wasConnected = false;
+const clientId = Math.random().toString(36).substring(2, 9);
 
 function scheduleAutoReconnect(reason = 'P2P connection lost') {
     if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
@@ -106,13 +187,13 @@ function connectSignalingServer() {
         reconnectAttempts = 0;
         if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
             updateStatus('connected', 'P2P Connected');
-        } else {
-            updateStatus('connecting', 'Waiting for peer...');
-            startBtn.textContent = 'Waiting for peer...';
-            displaySystemMessage('Connected to signaling server. Waiting for a peer to join...');
+            return;
         }
+        updateStatus('connecting', 'Waiting for peer...');
+        startBtn.textContent = 'Waiting for peer...';
+        displaySystemMessage('Connected to signaling server. Waiting for a peer to join...');
         try {
-            ws.send(JSON.stringify({ type: 'hello' }));
+            ws.send(JSON.stringify({ type: 'hello', from: clientId }));
         } catch(e){}
     };
 
@@ -166,18 +247,36 @@ function connectSignalingServer() {
                 case 'offer':
                     console.log('Received offer');
                     if (autoReconnectTimer) { clearTimeout(autoReconnectTimer); autoReconnectTimer = null; }
-                    const now = Date.now();
-                    if (peerConnection && (peerConnection.iceConnectionState === 'checking' || peerConnection.connectionState === 'connecting') && (now - lastOfferReceived < 3000)) {
-                        console.log('Ignored duplicate rapid offer while ICE is checking.');
+                    if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
+                    if (peerConnection?.connectionState === 'connected' && dataChannel?.readyState === 'open') {
+                        console.log('Already connected and dataChannel open, ignoring duplicate offer.');
                         break;
                     }
-                    lastOfferReceived = now;
-                    if (peerConnection) handleDisconnect(false);
-                    initPeerConnection();
+                    const isCollision = peerConnection && (peerConnection.signalingState !== 'stable' || isNegotiating);
+                    if (isCollision) {
+                        const isPolite = message.from && message.from < clientId;
+                        if (!isPolite) {
+                            console.log('Offer collision: impolite peer ignoring offer.');
+                            break;
+                        }
+                        console.log('Offer collision: polite peer rolling back local offer.');
+                        try {
+                            await peerConnection.setLocalDescription({ type: 'rollback' });
+                        } catch(e) {
+                            if (peerConnection) handleDisconnect(false);
+                            initPeerConnection();
+                        }
+                    } else if (!peerConnection || peerConnection.signalingState === 'closed') {
+                        initPeerConnection();
+                    }
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
                     const answer = await peerConnection.createAnswer();
                     await peerConnection.setLocalDescription(answer);
-                    ws.send(JSON.stringify(peerConnection.localDescription));
+                    ws.send(JSON.stringify({
+                        type: peerConnection.localDescription.type,
+                        sdp: peerConnection.localDescription.sdp,
+                        from: clientId
+                    }));
                     break;
                 case 'answer':
                     console.log('Received answer');
@@ -247,18 +346,44 @@ function initPeerConnection() {
     };
 
     peerConnection.onconnectionstatechange = () => {
-        console.log('WebRTC State:', peerConnection.connectionState);
+        const s = peerConnection.connectionState;
+        console.log('WebRTC State:', s);
 
-        if (peerConnection.connectionState === 'connected') {
+        if (s === 'connected') {
+            if (disconnectGraceTimer) {
+                clearTimeout(disconnectGraceTimer);
+                disconnectGraceTimer = null;
+            }
             if (autoReconnectTimer) {
                 clearTimeout(autoReconnectTimer);
                 autoReconnectTimer = null;
             }
             updateStatus('connected', 'P2P Connected');
             setupContainer.style.display = 'none'; // Hide setup once connected
-            displaySystemMessage('Secure P2P connection established!');
-
-        } else if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
+            if (!wasConnected) {
+                displaySystemMessage('Secure P2P connection established!');
+                wasConnected = true;
+            }
+        } else if (s === 'disconnected') {
+            console.log('P2P state is disconnected. Waiting 5s grace period before teardown...');
+            if (!disconnectGraceTimer) {
+                disconnectGraceTimer = setTimeout(() => {
+                    disconnectGraceTimer = null;
+                    if (peerConnection?.connectionState === 'disconnected') {
+                        wasConnected = false;
+                        updateStatus('disconnected', 'P2P Disconnected');
+                        displaySystemMessage('P2P connection lost. Auto-reconnecting in 2s...');
+                        handleDisconnect(false);
+                        scheduleAutoReconnect('P2P connection timeout');
+                    }
+                }, 5000);
+            }
+        } else if (['failed', 'closed'].includes(s)) {
+            if (disconnectGraceTimer) {
+                clearTimeout(disconnectGraceTimer);
+                disconnectGraceTimer = null;
+            }
+            wasConnected = false;
             updateStatus('disconnected', 'P2P Disconnected');
             displaySystemMessage('P2P connection lost. Auto-reconnecting in 2s...');
             handleDisconnect(false);
@@ -286,7 +411,11 @@ async function createOffer() {
 
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    ws.send(JSON.stringify(peerConnection.localDescription));
+    ws.send(JSON.stringify({
+        type: peerConnection.localDescription.type,
+        sdp: peerConnection.localDescription.sdp,
+        from: clientId
+    }));
 }
 
 function setupDataChannel() {
@@ -310,13 +439,21 @@ function setupDataChannel() {
         try {
             const data = JSON.parse(event.data);
             if (data.type === 'text') {
-                displayUserMessage(data.content, 'received');
+                displayUserMessage(data.content, 'received', false, data.replyTo, data.id);
+            } else if (data.type === 'edit_text') {
+                applyMessageEdit(data.id, data.content);
             } else if (data.type === 'emoji') {
                 createFloatingEmoji(data.emoji);
             } else if (data.type === 'gif') {
-                displayUserMessage(data.url, 'received', true);
+                displayUserMessage(data.url, 'received', true, data.replyTo);
             } else if (data.type === 'nudge') {
                 handleIncomingNudge();
+            } else if (data.type === 'effect') {
+                if (data.name === 'stare') {
+                    displaySystemMessage('👀 Peer sent you a stare!');
+                } else if (data.name === 'smirk') {
+                    displaySystemMessage('😏 Peer sent you a smirk!');
+                }
             } else if (data.type === 'ping') {
                 if (dataChannel && dataChannel.readyState === 'open') {
                     dataChannel.send(JSON.stringify({ type: 'pong' }));
@@ -332,9 +469,18 @@ function setupDataChannel() {
 }
 
 function handleDisconnect(fullDisconnect = true) {
-    if (fullDisconnect && autoReconnectTimer) {
-        clearTimeout(autoReconnectTimer);
-        autoReconnectTimer = null;
+    clearReply();
+    clearEditing();
+    if (disconnectGraceTimer) {
+        clearTimeout(disconnectGraceTimer);
+        disconnectGraceTimer = null;
+    }
+    if (fullDisconnect) {
+        wasConnected = false;
+        if (autoReconnectTimer) {
+            clearTimeout(autoReconnectTimer);
+            autoReconnectTimer = null;
+        }
     }
     if (dataChannel) {
         dataChannel.close();
@@ -369,20 +515,35 @@ function handleDisconnect(fullDisconnect = true) {
 
 function sendMessage() {
     const text = messageInput.value.trim();
-    if (text && dataChannel?.readyState === 'open') {
-        const payload = { type: 'text', content: text };
-        dataChannel.send(JSON.stringify(payload));
-        displayUserMessage(text, 'sent');
+    if (!text) return;
+
+    if (editingMsg) {
+        if (text !== editingMsg.originalContent && dataChannel?.readyState === 'open') {
+            applyMessageEdit(editingMsg.id, text);
+            dataChannel.send(JSON.stringify({ type: 'edit_text', id: editingMsg.id, content: text }));
+        }
         messageInput.value = '';
+        clearEditing();
+        return;
+    }
+
+    if (dataChannel?.readyState === 'open') {
+        const msgId = 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const payload = { type: 'text', id: msgId, content: text, replyTo: currentReply };
+        dataChannel.send(JSON.stringify(payload));
+        displayUserMessage(text, 'sent', false, currentReply, msgId);
+        messageInput.value = '';
+        clearReply();
     }
 }
 
 function sendGifMessage(gifUrl) {
     if (gifUrl && dataChannel?.readyState === 'open') {
-        const payload = { type: 'gif', url: gifUrl };
+        const payload = { type: 'gif', url: gifUrl, replyTo: currentReply };
         dataChannel.send(JSON.stringify(payload));
-        displayUserMessage(gifUrl, 'sent', true);
+        displayUserMessage(gifUrl, 'sent', true, currentReply);
         klipyContainer.style.display = 'none';
+        clearReply();
     }
 }
 
@@ -398,6 +559,27 @@ sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         sendMessage();
+    } else if (e.key === 'Escape') {
+        if (editingMsg) {
+            clearEditing();
+            messageInput.value = '';
+        } else {
+            clearReply();
+        }
+    } else if (e.key === 'ArrowUp' && !messageInput.value.trim() && !editingMsg) {
+        const sentMsgs = document.querySelectorAll('.message.sent[data-msg-id]');
+        for (let idx = sentMsgs.length - 1; idx >= 0; idx--) {
+            const m = sentMsgs[idx];
+            const textEl = m.querySelector('.msg-text');
+            if (textEl && !m.querySelector('.gif-container')) {
+                const editBtn = m.querySelector('.edit-btn');
+                if (editBtn) {
+                    editBtn.click();
+                    e.preventDefault();
+                    break;
+                }
+            }
+        }
     }
 });
 
@@ -414,14 +596,31 @@ function setEmojiButtonsDisabled(disabled) {
     emojiButtons.forEach(btn => btn.disabled = disabled);
 }
 
-function displayUserMessage(text, type, isGif = false) {
+function displayUserMessage(text, type, isGif = false, replyTo = null, msgId = null) {
     const msgDiv = document.createElement('div');
     msgDiv.classList.add('message', type);
+    if (msgId) msgDiv.dataset.msgId = msgId;
+
+    if (replyTo) {
+        const quote = document.createElement('div');
+        quote.classList.add('reply-preview');
+        quote.innerHTML = `
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 3L2 7l4 4"/>
+                <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+            </svg>
+            <span class="reply-preview-text"></span>
+        `;
+        quote.querySelector('.reply-preview-text').textContent = replyTo;
+        msgDiv.appendChild(quote);
+    }
 
     if (isGif) {
-        msgDiv.style.background = 'transparent';
-        msgDiv.style.padding = '0';
-        msgDiv.style.border = 'none';
+        if (!replyTo) {
+            msgDiv.style.background = 'transparent';
+            msgDiv.style.padding = '0';
+            msgDiv.style.border = 'none';
+        }
         const img = document.createElement('img');
         img.src = text;
         img.classList.add('gif-content');
@@ -431,7 +630,39 @@ function displayUserMessage(text, type, isGif = false) {
         container.appendChild(img);
         msgDiv.appendChild(container);
     } else {
-        msgDiv.textContent = text;
+        const span = document.createElement('span');
+        span.className = 'msg-text';
+        span.textContent = text;
+        msgDiv.appendChild(span);
+    }
+
+    if (type === 'received') {
+        const replyBtn = document.createElement('button');
+        replyBtn.className = 'reply-btn';
+        replyBtn.type = 'button';
+        replyBtn.title = 'Reply';
+        replyBtn.innerHTML = `
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 3L2 7l4 4"/>
+                <path d="M2 7h7a4 4 0 0 1 4 4v2"/>
+            </svg>
+            <span>Reply</span>
+        `;
+        replyBtn.onclick = () => setReply(isGif ? '[GIF]' : text);
+        msgDiv.appendChild(replyBtn);
+    } else if (type === 'sent' && !isGif && msgId) {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.type = 'button';
+        editBtn.title = 'Edit';
+        editBtn.innerHTML = `
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H2v-3L10.5 1.5z"/>
+            </svg>
+            <span>Edit</span>
+        `;
+        editBtn.onclick = () => setEditing(msgId, text);
+        msgDiv.appendChild(editBtn);
     }
 
     appendMessageElement(msgDiv);
