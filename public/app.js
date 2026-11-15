@@ -65,6 +65,10 @@ function clearEditing() {
         editBar.style.display = 'none';
         editBarText.textContent = '';
     }
+    if (messageInput) {
+        messageInput.value = '';
+        messageInput.focus();
+    }
 }
 
 function applyMessageEdit(id, newContent) {
@@ -89,10 +93,7 @@ if (cancelReplyBtn) {
     cancelReplyBtn.addEventListener('click', clearReply);
 }
 if (cancelEditBtn) {
-    cancelEditBtn.addEventListener('click', () => {
-        clearEditing();
-        messageInput.value = '';
-    });
+    cancelEditBtn.addEventListener('click', clearEditing);
 }
 
 let ws;
@@ -453,6 +454,10 @@ function setupDataChannel() {
                     displaySystemMessage('👀 Peer sent you a stare!');
                 } else if (data.name === 'smirk') {
                     displaySystemMessage('😏 Peer sent you a smirk!');
+                } else if (data.name === 'knock') {
+                    displaySystemMessage('✊ Peer sent you a knock!');
+                } else if (data.name === 'sheep' || data.name === 'superior') {
+                    displaySystemMessage('🐑 Peer sent you a sheep!');
                 }
             } else if (data.type === 'ping') {
                 if (dataChannel && dataChannel.readyState === 'open') {
@@ -562,7 +567,6 @@ messageInput.addEventListener('keydown', (e) => {
     } else if (e.key === 'Escape') {
         if (editingMsg) {
             clearEditing();
-            messageInput.value = '';
         } else {
             clearReply();
         }

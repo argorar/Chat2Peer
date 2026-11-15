@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.15.1
+// @version      1.15.2
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -94,12 +94,15 @@
   let syncInterval = null;
   let lastPlayerState = null;
   let currentVideoId = null;
+  let lastSeekTime = 0;
   const DRIFT_THRESHOLD = 2500;
   const PLAY_DRIFT_THRESHOLD = 5000;
+  const SEEK_GRACE_PERIOD_MS = 5000;
 
   // ── Voice Notes State ──
   let mediaRecorder = null, audioChunks = [], recordTimerInterval = null, recordStartTime = 0;
   let incomingAudioChunks = {};
+  let currentVoiceAudio = null;
 
   // ── Clipboard Images State ──
   let incomingImageChunks = {};
@@ -501,14 +504,33 @@
 #c2p-sidebar .c2p-record-cancel{color:#999}
 #c2p-sidebar .c2p-record-cancel:hover{color:#fff;background:rgba(255,255,255,.15)}
 #c2p-sidebar .c2p-record-send{background:#e50914;color:#fff}
-#c2p-sidebar .c2p-record-send:hover{background:#ff1e27;transform:scale(1.1)}
-#c2p-sidebar .c2p-audio-player{display:flex;align-items:center;gap:10px;min-width:180px;padding:2px 0}
-#c2p-sidebar .c2p-audio-btn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;transition:all .2s}
-#c2p-sidebar .c2p-audio-btn:hover{background:rgba(255,255,255,.35);transform:scale(1.08)}
-#c2p-sidebar .c2p-audio-timeline{flex:1;display:flex;flex-direction:column;gap:4px}
-#c2p-sidebar .c2p-audio-progress{width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;appearance:none;-webkit-appearance:none;outline:none;cursor:pointer}
-#c2p-sidebar .c2p-audio-progress::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#fff;cursor:pointer}
-#c2p-sidebar .c2p-audio-duration{font-size:10px;opacity:.8;font-variant-numeric:tabular-nums}
+#c2p-sidebar .c2p-record-send:hover{background:#ff1e27;filter:brightness(1.15)}
+#c2p-sidebar .c2p-record-send:active{transform:scale(.95)}
+#c2p-sidebar .c2p-msg.c2p-msg-audio{padding:10px 14px;border-radius:16px;min-width:210px;max-width:85%}
+#c2p-sidebar .c2p-msg.c2p-msg-audio.c2p-sent{align-self:flex-end;background:#1e1a1b;border:1px solid rgba(229,9,20,.24);border-bottom-right-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+#c2p-sidebar .c2p-msg.c2p-msg-audio.c2p-received{align-self:flex-start;background:#18181b;border:1px solid rgba(255,255,255,.08);border-bottom-left-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+#c2p-sidebar .c2p-audio-player{display:flex;align-items:center;gap:12px;user-select:none}
+#c2p-sidebar .c2p-audio-btn{width:36px;height:36px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;outline:none;transition:filter 140ms ease,transform 140ms ease}
+#c2p-sidebar .c2p-audio-btn:hover{filter:brightness(1.15)}
+#c2p-sidebar .c2p-audio-btn:active{transform:scale(.95)}
+#c2p-sidebar .c2p-sent .c2p-audio-btn{background:#e50914;color:#fff;box-shadow:0 2px 8px rgba(229,9,20,.32)}
+#c2p-sidebar .c2p-received .c2p-audio-btn{background:#ededed;color:#141415;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+#c2p-sidebar .c2p-audio-btn svg{display:block}
+#c2p-sidebar .c2p-audio-btn .c2p-icon-play{transform:translateX(1px)}
+#c2p-sidebar .c2p-audio-body{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+#c2p-sidebar .c2p-audio-waveform{height:22px;display:flex;align-items:center;gap:2px;cursor:pointer;padding:2px 0;outline:none}
+#c2p-sidebar .c2p-audio-waveform:focus-visible{box-shadow:0 0 0 2px rgba(229,9,20,.5);border-radius:4px}
+#c2p-sidebar .c2p-wave-bar{flex:1;min-width:2px;border-radius:2px;transition:background-color 100ms ease,transform 100ms ease}
+#c2p-sidebar .c2p-sent .c2p-wave-bar{background:rgba(255,255,255,.22)}
+#c2p-sidebar .c2p-sent .c2p-wave-bar.c2p-wave-played{background:#e50914}
+#c2p-sidebar .c2p-received .c2p-wave-bar{background:rgba(255,255,255,.2)}
+#c2p-sidebar .c2p-received .c2p-wave-bar.c2p-wave-played{background:#ededed}
+#c2p-sidebar .c2p-audio-waveform:hover .c2p-wave-bar{transform:scaleY(1.08)}
+#c2p-sidebar .c2p-audio-meta{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-variant-numeric:tabular-nums;line-height:1}
+#c2p-sidebar .c2p-sent .c2p-audio-meta{color:rgba(255,255,255,.65)}
+#c2p-sidebar .c2p-received .c2p-audio-meta{color:rgba(255,255,255,.55)}
+#c2p-sidebar .c2p-audio-meta-right{display:flex;align-items:center;gap:4px;opacity:.8}
+#c2p-sidebar .c2p-audio-meta-right svg{display:block}
 #c2p-sidebar .c2p-klipy-container{position:absolute;bottom:115px;left:12px;right:12px;height:340px;max-height:calc(100vh - 180px);background:rgba(24,24,24,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.7);display:none;flex-direction:column;z-index:100;overflow:hidden;animation:c2p-scaleIn .2s cubic-bezier(.16,1,.3,1) forwards;transform-origin:bottom right}
 @keyframes c2p-scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 #c2p-sidebar .c2p-klipy-header{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.25)}
@@ -929,7 +951,6 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       if (e.key === 'Escape') {
         if (editingMsg) {
           clearEditing();
-          msgInput.value = '';
         } else {
           clearReply();
         }
@@ -1322,6 +1343,11 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     if (bar && txt) {
       bar.style.display = 'none';
       txt.textContent = '';
+    }
+    const input = document.getElementById('c2p-msg-input');
+    if (input) {
+      input.value = '';
+      focusMsgInput();
     }
   }
   function applyMessageEdit(id, newContent) {
@@ -1947,6 +1973,21 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       }
       return;
     }
+
+    // 3. Detect "Skip intro" / "Omitir intro" / "Saltar intro"
+    const skipIntroBtn = e.target.closest?.(
+      '[data-uia="player-skip-intro"], [data-uia*="skip-intro"], [data-uia*="skip-credits"]'
+    ) || (e.target.closest?.('button, [role="button"], a') && /skip.*intro|omitir.*intro|saltar.*intro|pular.*intro/i.test(
+      e.target.closest('button, [role="button"], a').textContent ||
+      e.target.closest('button, [role="button"], a').getAttribute('aria-label') || ''
+    ) ? e.target.closest('button, [role="button"], a') : null);
+
+    if (skipIntroBtn) {
+      lastSeekTime = now;
+      console.log('[C2P] User clicked skip intro, activating seek grace period');
+      setTimeout(() => { if (isWatchPage()) pollPlayerState(true); }, 150);
+      return;
+    }
   }
 
   function triggerWatchCredits() {
@@ -2122,6 +2163,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     }
 
     if (seeked) {
+      lastSeekTime = Date.now();
       console.log("[C2P] Detected seek to", Math.floor(time / 1000));
       displaySystemMessage('You seeked to ' + Math.floor(time / 1000) + 's', 'seek');
       broadcastSync('seek', time);
@@ -2222,6 +2264,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
         wakeNetflixUI();
         displaySystemMessage('Peer paused playback', 'pause');
       } else if (d.action === 'seek') {
+        lastSeekTime = Date.now();
         p.seek(d.time);
         wakeNetflixUI();
         displaySystemMessage('Peer seeked to ' + Math.floor(d.time / 1000) + 's', 'seek');
@@ -2246,22 +2289,21 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
           console.log("[C2P] Reconciling speed from heartbeat:", d.speed);
           p.setPlaybackRate(d.speed);
         }
+        const now = Date.now();
+        const inSeekGracePeriod = (now - lastSeekTime) < SEEK_GRACE_PERIOD_MS;
         const localTime = p.getTime();
         const timeDiff = Math.abs(localTime - d.time);
 
-        if (!p.isPaused() && !d.paused && timeDiff > DRIFT_THRESHOLD) {
-          p.seek(d.time);
-          wakeNetflixUI();
-        } else if (p.isPaused() && !d.paused && timeDiff >= PLAY_DRIFT_THRESHOLD) {
-          console.log("[C2P] Missed play event detected. Reconciling playback with peer at:", d.time);
-          p.seek(d.time);
-          p.play();
-          wakeNetflixUI();
-          displaySystemMessage('Reconciling playback with peer...', 'play');
-        } else if (!p.isPaused() && d.paused && (localTime - d.time) >= PLAY_DRIFT_THRESHOLD) {
-          console.log("[C2P] Peer is paused while local is playing. Resending play sync:", localTime);
-          if (dataChannel && dataChannel.readyState === 'open') {
-            dataChannel.send(JSON.stringify({ type: 'sync', action: 'play', time: localTime }));
+        if (!inSeekGracePeriod) {
+          if (!p.isPaused() && !d.paused && timeDiff > DRIFT_THRESHOLD) {
+            p.seek(d.time);
+            wakeNetflixUI();
+          } else if (p.isPaused() && !d.paused && timeDiff >= PLAY_DRIFT_THRESHOLD) {
+            console.log("[C2P] Missed play event detected. Reconciling playback with peer at:", d.time);
+            p.seek(d.time);
+            p.play();
+            wakeNetflixUI();
+            displaySystemMessage('Reconciling playback with peer...', 'play');
           }
         }
       }
@@ -2324,6 +2366,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     isPeerDisconnected = false;
     setInputEnabled(false);
     incomingImageChunks = {};
+    incomingAudioChunks = {};
+    if (currentVoiceAudio) { try { currentVoiceAudio.pause(); } catch(e){} currentVoiceAudio = null; }
     clearImagePreview();
     const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
 
@@ -2683,7 +2727,10 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
           if (item.received === item.total) {
             const fullDataUrl = item.chunks.join('');
             delete incomingAudioChunks[d.id];
-            displayAudioMessage(fullDataUrl, 'received', item.duration);
+            let audioUrl = fullDataUrl;
+            const b = dataUrlToBlob(fullDataUrl);
+            if (b) audioUrl = URL.createObjectURL(b);
+            displayAudioMessage(audioUrl, 'received', item.duration);
           }
         }
         else if (d.type === 'image_chunk') {
@@ -2741,6 +2788,8 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     }
     setInputEnabled(false);
     incomingImageChunks = {};
+    incomingAudioChunks = {};
+    if (currentVoiceAudio) { try { currentVoiceAudio.pause(); } catch(e){} currentVoiceAudio = null; }
     clearImagePreview();
     const kc = document.getElementById('c2p-klipy-container'); if (kc) kc.style.display = 'none';
   }
@@ -5162,7 +5211,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   }
 
   function finishAndSendRecording() {
-    const duration = Math.max(1, Math.round((Date.now() - recordStartTime) / 1000));
+    const duration = Math.max(1, Number(((Date.now() - recordStartTime) / 1000).toFixed(1)));
     resetRecordingUI();
     if (!mediaRecorder) return;
     const rec = mediaRecorder;
@@ -5207,74 +5256,251 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     reader.readAsDataURL(blob);
   }
 
+  function dataUrlToBlob(dataUrl) {
+    try {
+      if (!dataUrl || typeof dataUrl !== 'string') return null;
+      const commaIdx = dataUrl.indexOf(',');
+      if (commaIdx === -1) return null;
+      const header = dataUrl.slice(0, commaIdx);
+      const mime = header.replace(/^data:/, '').replace(/;base64$/, '') || 'audio/webm';
+      const bstr = atob(dataUrl.slice(commaIdx + 1));
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new Blob([u8arr], { type: mime });
+    } catch (e) {
+      console.error('[C2P] Error converting data URL to blob:', e);
+      return null;
+    }
+  }
+
+  const WAVE_HEIGHTS = [28, 45, 70, 90, 60, 35, 50, 85, 100, 75, 45, 65, 80, 55, 30, 60, 95, 75, 40, 55, 80, 65, 45, 35, 60, 40, 25, 20];
+  const SVG_PLAY = '<svg class="c2p-icon-play" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 4.5v15l12-7.5-12-7.5z"/></svg>';
+  const SVG_PAUSE = '<svg class="c2p-icon-pause" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4.5" width="3.5" height="15" rx="1"/><rect x="14.5" y="4.5" width="3.5" height="15" rx="1"/></svg>';
+  const SVG_MIC = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
+
   function displayAudioMessage(srcUrl, type, duration = 0) {
+    let finalSrc = srcUrl;
+    if (typeof srcUrl === 'string' && srcUrl.startsWith('data:')) {
+      const b = dataUrlToBlob(srcUrl);
+      if (b) finalSrc = URL.createObjectURL(b);
+    }
+
     const d = document.createElement('div');
-    d.classList.add('c2p-msg', `c2p-${type}`);
+    d.classList.add('c2p-msg', 'c2p-msg-audio', `c2p-${type}`);
 
     const player = document.createElement('div');
     player.classList.add('c2p-audio-player');
 
     const audio = document.createElement('audio');
-    audio.src = srcUrl;
-    audio.preload = 'metadata';
+    audio.src = finalSrc;
+    audio.preload = 'auto';
+    audio.volume = 1.0;
+    audio.muted = false;
+    audio.style.display = 'none';
+    player.appendChild(audio);
 
     const playBtn = document.createElement('button');
     playBtn.classList.add('c2p-audio-btn');
-    playBtn.innerHTML = '▶';
+    playBtn.innerHTML = SVG_PLAY;
+    playBtn.setAttribute('aria-label', 'Play voice message');
     playBtn.title = 'Play';
 
-    const timeline = document.createElement('div');
-    timeline.classList.add('c2p-audio-timeline');
+    const body = document.createElement('div');
+    body.classList.add('c2p-audio-body');
 
-    const progress = document.createElement('input');
-    progress.type = 'range';
-    progress.min = '0';
-    progress.max = '100';
-    progress.value = '0';
-    progress.classList.add('c2p-audio-progress');
+    const waveform = document.createElement('div');
+    waveform.classList.add('c2p-audio-waveform');
+    waveform.setAttribute('role', 'slider');
+    waveform.setAttribute('tabindex', '0');
+    waveform.setAttribute('aria-label', 'Voice message timeline');
+    waveform.setAttribute('aria-valuemin', '0');
+    waveform.setAttribute('aria-valuemax', '100');
+    waveform.setAttribute('aria-valuenow', '0');
+
+    const bars = [];
+    WAVE_HEIGHTS.forEach((h) => {
+      const bar = document.createElement('div');
+      bar.classList.add('c2p-wave-bar');
+      bar.style.height = `${h}%`;
+      waveform.appendChild(bar);
+      bars.push(bar);
+    });
+
+    const meta = document.createElement('div');
+    meta.classList.add('c2p-audio-meta');
 
     const timeDisplay = document.createElement('span');
-    timeDisplay.classList.add('c2p-audio-duration');
+    timeDisplay.classList.add('c2p-audio-time');
     const formatTime = (sec) => {
-      const m = Math.floor(sec / 60);
-      const s = Math.floor(sec % 60);
+      if (!sec || isNaN(sec) || !isFinite(sec) || sec < 0) sec = 0;
+      const rounded = Math.round(sec);
+      const m = Math.floor(rounded / 60);
+      const s = Math.floor(rounded % 60);
       return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
-    timeDisplay.textContent = formatTime(duration);
+    timeDisplay.textContent = '0:00';
+
+    const metaRight = document.createElement('div');
+    metaRight.classList.add('c2p-audio-meta-right');
+    metaRight.innerHTML = SVG_MIC;
+    const totalDisplay = document.createElement('span');
+    totalDisplay.textContent = formatTime(duration);
+    metaRight.appendChild(totalDisplay);
+
+    meta.appendChild(timeDisplay);
+    meta.appendChild(metaRight);
+
+    const isKnownFinite = (val) => typeof val === 'number' && !isNaN(val) && isFinite(val) && val > 0;
+    const getEffectiveDuration = () => isKnownFinite(audio.duration) ? audio.duration : (isKnownFinite(duration) ? duration : 0);
+
+    let playWatchInterval = null;
+
+    function stopPlayWatch() {
+      if (playWatchInterval) {
+        clearInterval(playWatchInterval);
+        playWatchInterval = null;
+      }
+    }
+
+    function resetToPlayState() {
+      stopPlayWatch();
+      if (currentVoiceAudio === audio) currentVoiceAudio = null;
+      try { audio.pause(); } catch(e){}
+      audio.currentTime = 0;
+      playBtn.innerHTML = SVG_PLAY;
+      playBtn.setAttribute('aria-label', 'Play voice message');
+      playBtn.title = 'Play';
+      updateWaveform(0);
+      timeDisplay.textContent = '0:00';
+    }
+
+    function updateWaveform(ratio) {
+      const cut = Math.floor(ratio * bars.length);
+      bars.forEach((b, i) => {
+        b.classList.toggle('c2p-wave-played', i <= cut && ratio > 0);
+      });
+      waveform.setAttribute('aria-valuenow', Math.round(ratio * 100));
+    }
+
+    function seekToRatio(ratio) {
+      ratio = Math.max(0, Math.min(1, ratio));
+      const totalDur = getEffectiveDuration();
+      if (totalDur > 0) {
+        audio.currentTime = ratio * totalDur;
+        updateWaveform(ratio);
+        timeDisplay.textContent = formatTime(audio.currentTime);
+      }
+    }
 
     playBtn.addEventListener('click', () => {
       if (audio.paused) {
         audio.play().catch(e => console.error('[C2P] Play error:', e));
-        playBtn.innerHTML = '⏸';
       } else {
         audio.pause();
-        playBtn.innerHTML = '▶';
+      }
+    });
+
+    audio.addEventListener('play', () => {
+      if (currentVoiceAudio && currentVoiceAudio !== audio) {
+        try { currentVoiceAudio.pause(); } catch(e){}
+      }
+      currentVoiceAudio = audio;
+      playBtn.innerHTML = SVG_PAUSE;
+      playBtn.setAttribute('aria-label', 'Pause voice message');
+      playBtn.title = 'Pause';
+
+      stopPlayWatch();
+      let lastPos = audio.currentTime;
+      let stallTicks = 0;
+
+      playWatchInterval = setInterval(() => {
+        if (audio.paused || audio.ended) {
+          stopPlayWatch();
+          return;
+        }
+
+        const totalDur = getEffectiveDuration();
+        const cur = audio.currentTime;
+
+        // Reached end of audio duration
+        if (totalDur > 0 && cur >= totalDur) {
+          resetToPlayState();
+          return;
+        }
+
+        // Buffer finished and currentTime stopped advancing (handles Chrome WebM duration: Infinity quirk)
+        if (cur > 0.3 && Math.abs(cur - lastPos) < 0.05) {
+          stallTicks++;
+          if (stallTicks >= 2 && (totalDur <= 0 || cur >= totalDur * 0.8)) {
+            resetToPlayState();
+            return;
+          }
+        } else {
+          stallTicks = 0;
+          lastPos = cur;
+        }
+      }, 200);
+    });
+
+    audio.addEventListener('pause', () => {
+      stopPlayWatch();
+      playBtn.innerHTML = SVG_PLAY;
+      playBtn.setAttribute('aria-label', 'Play voice message');
+      playBtn.title = 'Play';
+    });
+
+    audio.addEventListener('loadedmetadata', () => {
+      const eff = getEffectiveDuration();
+      if (eff > 0) {
+        totalDisplay.textContent = formatTime(eff);
       }
     });
 
     audio.addEventListener('timeupdate', () => {
-      if (audio.duration && !isNaN(audio.duration)) {
-        progress.value = (audio.currentTime / audio.duration) * 100;
+      const totalDur = getEffectiveDuration();
+      if (totalDur > 0) {
+        if (audio.currentTime >= totalDur) {
+          resetToPlayState();
+          return;
+        }
+        const ratio = Math.max(0, Math.min(1, audio.currentTime / totalDur));
+        updateWaveform(ratio);
         timeDisplay.textContent = formatTime(audio.currentTime);
       }
     });
 
     audio.addEventListener('ended', () => {
-      playBtn.innerHTML = '▶';
-      progress.value = 0;
-      timeDisplay.textContent = formatTime(audio.duration || duration);
+      resetToPlayState();
     });
 
-    progress.addEventListener('input', () => {
-      if (audio.duration && !isNaN(audio.duration)) {
-        audio.currentTime = (progress.value / 100) * audio.duration;
+    waveform.addEventListener('click', (e) => {
+      const rect = waveform.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      seekToRatio(clickX / rect.width);
+    });
+
+    waveform.addEventListener('keydown', (e) => {
+      const totalDur = getEffectiveDuration();
+      if (!totalDur) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        seekToRatio((audio.currentTime + 2) / totalDur);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        seekToRatio((audio.currentTime - 2) / totalDur);
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        playBtn.click();
       }
     });
 
-    timeline.appendChild(progress);
-    timeline.appendChild(timeDisplay);
+    body.appendChild(waveform);
+    body.appendChild(meta);
     player.appendChild(playBtn);
-    player.appendChild(timeline);
+    player.appendChild(body);
     d.appendChild(player);
     appendMsg(d);
   }
