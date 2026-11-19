@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chat2Peer for Netflix
 // @namespace    https://github.com/argorar/Chat2Peer
-// @version      1.15.4
+// @version      1.16.0
 // @description  P2P encrypted chat sidebar for Netflix — WebRTC powered with Video Sync
 // @author       argorar
 // @match        https://www.netflix.com/*
@@ -89,7 +89,8 @@
   // ── Klipy GIF State ──
   const KLIPY_API_KEY = 'myMchPMlqDxJKpeSzJfOLCFrTpZqdqCLLF9Uf6RPKjxIPmeqxy6k5EPgo2PFivAI';
   const GIF_LIMIT = 20;
-  let gifSearchTimeout = null, currentGifOffset = 0, currentGifQuery = '', isLoadingGifs = false, hasMoreGifs = true;
+  let gifSearchTimeout = null, currentGifPage = 1, currentGifQuery = '', isLoadingGifs = false, hasMoreGifs = true;
+  const renderedGifIds = new Set();
 
   // ── Sync State ──
   let suppressBroadcast = 0;
@@ -397,10 +398,14 @@
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
 #c2p-sidebar .c2p-scroll-bottom-btn.c2p-has-unread{border-color:#e50914;background:rgba(229,9,20,.22);box-shadow:0 4px 16px rgba(229,9,20,.4)}
 #c2p-sidebar .c2p-scroll-bottom-btn svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.5;fill:none;flex-shrink:0}
-#c2p-sidebar .c2p-msg{position:relative;max-width:85%;min-width:60px;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word}
+#c2p-sidebar .c2p-msg{position:relative;max-width:85%;min-width:60px;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.45;animation:c2p-slideUp .35s cubic-bezier(.22,1,.36,1) forwards;opacity:0;transform:translateY(12px);word-break:break-word;display:flex;flex-direction:column}
 @keyframes c2p-slideUp{to{opacity:1;transform:translateY(0)}}
 #c2p-sidebar .c2p-msg.c2p-sent{align-self:flex-end;background:linear-gradient(135deg,#e50914,#b20710);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(229,9,20,.2)}
 #c2p-sidebar .c2p-msg.c2p-received{align-self:flex-start;background:rgba(50,50,50,.8);color:#e5e5e5;border-bottom-left-radius:4px;border:1px solid rgba(255,255,255,.06)}
+#c2p-sidebar .c2p-msg-time{display:inline-block;font-size:10px;line-height:1;margin-top:4px;align-self:flex-end;font-variant-numeric:tabular-nums;letter-spacing:0.01em;user-select:none;cursor:default}
+#c2p-sidebar .c2p-msg.c2p-sent .c2p-msg-time{color:rgba(255,255,255,0.75)}
+#c2p-sidebar .c2p-msg.c2p-received .c2p-msg-time{color:#999}
+#c2p-sidebar .c2p-msg.c2p-has-gif .c2p-msg-time,#c2p-sidebar .c2p-msg.c2p-has-image .c2p-msg-time{background:rgba(20,20,20,0.75);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);padding:2px 5px;border-radius:4px;border:1px solid rgba(255,255,255,0.08);margin-top:4px}
 #c2p-sidebar .c2p-reply-btn,#c2p-sidebar .c2p-edit-btn{opacity:0;pointer-events:none;transform:translateY(2px);position:absolute;top:-10px;right:8px;background:rgba(26,26,26,.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#aaa;border-radius:6px;height:22px;padding:0 7px;font-size:11px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:5;display:inline-flex;align-items:center;gap:4px;font-family:inherit;white-space:nowrap;width:max-content;min-width:max-content;max-width:none;word-break:normal;overflow-wrap:normal;line-height:1;transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease,color .15s ease}
 #c2p-sidebar .c2p-reply-btn svg,#c2p-sidebar .c2p-edit-btn svg{flex-shrink:0}
 #c2p-sidebar .c2p-reply-btn span,#c2p-sidebar .c2p-edit-btn span{white-space:nowrap;line-height:1;display:inline}
@@ -1378,7 +1383,37 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     }
   }
 
-  function displayUserMessage(content, type, isGif = false, author = null, isImage = false, replyTo = null, msgId = null) {
+  function formatMessageTime(timestamp, targetTz = null) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    const opts = { hour: '2-digit', minute: '2-digit' };
+    if (targetTz) opts.timeZone = targetTz;
+    return date.toLocaleTimeString([], opts);
+  }
+
+  function formatTimeTooltip(timestamp, senderTz = null, viewerTz = null) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    const localTz = viewerTz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const localTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: localTz });
+    const localDate = date.toLocaleDateString([], { timeZone: localTz });
+    const utcTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' });
+    const utcDate = date.toLocaleDateString([], { timeZone: 'UTC' });
+
+    let tooltip = `${localDate} ${localTime} (Local)\n${utcDate} ${utcTime} UTC`;
+    if (senderTz && senderTz !== localTz) {
+      try {
+        const peerTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: senderTz });
+        const peerDate = date.toLocaleDateString([], { timeZone: senderTz });
+        tooltip += `\n${peerDate} ${peerTime} (Peer: ${senderTz})`;
+      } catch (e) {}
+    }
+    return tooltip;
+  }
+
+  function displayUserMessage(content, type, isGif = false, author = null, isImage = false, replyTo = null, msgId = null, timestamp = null, senderTz = null) {
     const d = document.createElement('div'); d.classList.add('c2p-msg', `c2p-${type}`);
     if (msgId) d.dataset.msgId = msgId;
     if (replyTo) {
@@ -1395,13 +1430,19 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       d.appendChild(q);
     }
     if (isGif) {
-      if (!replyTo) d.style.cssText = 'background:transparent;padding:0;border:none';
+      if (!replyTo) {
+        d.style.cssText = 'background:transparent;padding:0;border:none';
+        d.classList.add('c2p-has-gif');
+      }
       const w = document.createElement('div'); w.classList.add('c2p-gif-wrap');
       const i = document.createElement('img'); i.src = content;
       i.onload = () => { if (!userScrolledUp) scrollToBottom(true); };
       w.appendChild(i); d.appendChild(w);
     } else if (isImage) {
-      if (!replyTo) d.style.cssText = 'background:transparent;padding:0;border:none';
+      if (!replyTo) {
+        d.style.cssText = 'background:transparent;padding:0;border:none';
+        d.classList.add('c2p-has-image');
+      }
       if (author && type === 'received') {
         const authEl = document.createElement('div');
         authEl.classList.add('c2p-msg-author');
@@ -1464,6 +1505,13 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       eb.onclick = () => setEditing(msgId, content);
       d.appendChild(eb);
     }
+    const msgTime = timestamp || new Date().toISOString();
+    const timeEl = document.createElement('time');
+    timeEl.className = 'c2p-msg-time';
+    timeEl.dateTime = new Date(msgTime).toISOString();
+    timeEl.title = formatTimeTooltip(msgTime, senderTz);
+    timeEl.textContent = formatMessageTime(msgTime);
+    d.appendChild(timeEl);
     appendMsg(d);
   }
   function appendMsg(el) {
@@ -2713,7 +2761,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
         if (d.type === 'peer_disconnected') handlePeerDisconnected();
         else if (d.type === 'sync') handleSyncMessage(d);
         else if (d.type === 'typing') showRemoteTyping(!!d.isTyping);
-        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname, false, d.replyTo, d.id); }
+        else if (d.type === 'text') { showRemoteTyping(false); displayUserMessage(d.content, 'received', false, d.nickname, false, d.replyTo, d.id, d.timestamp, d.tz); }
         else if (d.type === 'edit_text') { applyMessageEdit(d.id, d.content); }
         else if (d.type === 'emoji') createFloatingEmoji(d.emoji);
         else if (d.type === 'sfx') {
@@ -2721,13 +2769,13 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
           const s = SOUND_EFFECTS[d.idx];
           if (s) displaySystemMessage(s.name, 'audio');
         }
-        else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true, null, false, d.replyTo); }
+        else if (d.type === 'gif') { showRemoteTyping(false); displayUserMessage(d.url, 'received', true, null, false, d.replyTo, null, d.timestamp, d.tz); }
         else if (d.type === 'nudge') { showRemoteTyping(false); handleIncomingNudge(); }
         else if (d.type === 'effect') { showRemoteTyping(false); handleIncomingEffect(d.name); }
         else if (d.type === 'audio_chunk') {
           showRemoteTyping(false);
           if (!incomingAudioChunks[d.id]) {
-            incomingAudioChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), duration: d.duration };
+            incomingAudioChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), duration: d.duration, timestamp: d.timestamp, tz: d.tz };
           }
           const item = incomingAudioChunks[d.id];
           if (!item.chunks[d.index]) {
@@ -2740,13 +2788,13 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
             let audioUrl = fullDataUrl;
             const b = dataUrlToBlob(fullDataUrl);
             if (b) audioUrl = URL.createObjectURL(b);
-            displayAudioMessage(audioUrl, 'received', item.duration);
+            displayAudioMessage(audioUrl, 'received', item.duration, item.timestamp, item.tz);
           }
         }
         else if (d.type === 'image_chunk') {
           showRemoteTyping(false);
           if (!incomingImageChunks[d.id]) {
-            incomingImageChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), nickname: d.nickname || null };
+            incomingImageChunks[d.id] = { total: d.total, received: 0, chunks: new Array(d.total), nickname: d.nickname || null, timestamp: d.timestamp, tz: d.tz };
           }
           const item = incomingImageChunks[d.id];
           if (d.nickname && !item.nickname) {
@@ -2760,7 +2808,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
             const fullDataUrl = item.chunks.join('');
             const senderNick = item.nickname;
             delete incomingImageChunks[d.id];
-            displayUserMessage(fullDataUrl, 'received', false, senderNick, true);
+            displayUserMessage(fullDataUrl, 'received', false, senderNick, true, null, null, item.timestamp, item.tz);
           }
         }
         else if (d.type === 'ping') {
@@ -2957,20 +3005,24 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
       if (localTypingTimeout) { clearTimeout(localTypingTimeout); localTypingTimeout = null; }
       if (isTypingLocally) { isTypingLocally = false; sendTypingStatus(false); }
       const msgId = 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const payload = { type: 'text', id: msgId, content: t, replyTo: currentReply };
+      const nowIso = new Date().toISOString();
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const payload = { type: 'text', id: msgId, content: t, replyTo: currentReply, timestamp: nowIso, tz: userTz };
       if (nickname && nickname.trim()) {
         payload.nickname = nickname.trim();
       }
       dataChannel.send(JSON.stringify(payload));
-      displayUserMessage(t, 'sent', false, null, false, currentReply, msgId);
+      displayUserMessage(t, 'sent', false, null, false, currentReply, msgId, nowIso, userTz);
       i.value = '';
       clearReply();
     }
   }
   function sendGifMessage(gifUrl) {
     if (gifUrl && dataChannel?.readyState === 'open') {
-      dataChannel.send(JSON.stringify({ type: 'gif', url: gifUrl, replyTo: currentReply }));
-      displayUserMessage(gifUrl, 'sent', true, null, false, currentReply);
+      const nowIso = new Date().toISOString();
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      dataChannel.send(JSON.stringify({ type: 'gif', url: gifUrl, replyTo: currentReply, timestamp: nowIso, tz: userTz }));
+      displayUserMessage(gifUrl, 'sent', true, null, false, currentReply, null, nowIso, userTz);
       const kc = document.getElementById('c2p-klipy-container');
       if (kc) kc.style.display = 'none';
       focusMsgInput();
@@ -5721,8 +5773,10 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   }
 
   function sendAudioBlob(blob, duration) {
+    const nowIso = new Date().toISOString();
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const localUrl = URL.createObjectURL(blob);
-    displayAudioMessage(localUrl, 'sent', duration);
+    displayAudioMessage(localUrl, 'sent', duration, nowIso, userTz);
 
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -5740,7 +5794,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
             index: i,
             total: totalChunks,
             chunk: chunk,
-            duration: duration
+            duration: duration,
+            timestamp: nowIso,
+            tz: userTz
           }));
         }
       }
@@ -5773,7 +5829,7 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   const SVG_PAUSE = '<svg class="c2p-icon-pause" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4.5" width="3.5" height="15" rx="1"/><rect x="14.5" y="4.5" width="3.5" height="15" rx="1"/></svg>';
   const SVG_MIC = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
 
-  function displayAudioMessage(srcUrl, type, duration = 0) {
+  function displayAudioMessage(srcUrl, type, duration = 0, timestamp = null, senderTz = null) {
     let finalSrc = srcUrl;
     if (typeof srcUrl === 'string' && srcUrl.startsWith('data:')) {
       const b = dataUrlToBlob(srcUrl);
@@ -5994,6 +6050,13 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     player.appendChild(playBtn);
     player.appendChild(body);
     d.appendChild(player);
+    const msgTime = timestamp || new Date().toISOString();
+    const timeEl = document.createElement('time');
+    timeEl.className = 'c2p-msg-time';
+    timeEl.dateTime = new Date(msgTime).toISOString();
+    timeEl.title = formatTimeTooltip(msgTime, senderTz);
+    timeEl.textContent = formatMessageTime(msgTime);
+    d.appendChild(timeEl);
     appendMsg(d);
   }
 
@@ -6080,10 +6143,12 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
 
   function sendImageBlob(blob) {
     if (!blob || dataChannel?.readyState !== 'open') return;
+    const nowIso = new Date().toISOString();
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64Data = reader.result;
-      displayUserMessage(base64Data, 'sent', false, null, true, currentReply);
+      displayUserMessage(base64Data, 'sent', false, null, true, currentReply, null, nowIso, userTz);
       clearReply();
 
       const CHUNK_SIZE = 16384;
@@ -6097,7 +6162,9 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
           id: imgId,
           index: i,
           total: totalChunks,
-          chunk: chunk
+          chunk: chunk,
+          timestamp: nowIso,
+          tz: userTz
         };
         if (i === 0 && nickname && nickname.trim()) {
           payload.nickname = nickname.trim();
@@ -6149,23 +6216,25 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     if (reset) {
       klipyResults.innerHTML = '';
       klipyResults.classList.add('c2p-loading');
-      currentGifOffset = 0;
+      currentGifPage = 1;
       hasMoreGifs = true;
+      renderedGifIds.clear();
     }
     if (isLoadingGifs || !hasMoreGifs) return;
     isLoadingGifs = true;
 
     try {
       const url = KLIPY_API_KEY
-        ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`
-        : `https://api.klipy.co/api/v1/gifs/trending?limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
+        ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/trending?page=${currentGifPage}&per_page=${GIF_LIMIT}`
+        : `https://api.klipy.co/api/v1/gifs/trending?page=${currentGifPage}&per_page=${GIF_LIMIT}`;
 
       const data = await fetchKlipyJson(url);
       const newGifs = data.data?.data || [];
+      hasMoreGifs = (data.data?.has_next ?? true) && newGifs.length > 0;
       if (newGifs.length === 0) {
         hasMoreGifs = false;
       } else {
-        currentGifOffset += GIF_LIMIT;
+        currentGifPage++;
         renderGifs(newGifs, reset);
       }
     } catch (err) {
@@ -6183,23 +6252,25 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     if (reset) {
       klipyResults.innerHTML = '';
       klipyResults.classList.add('c2p-loading');
-      currentGifOffset = 0;
+      currentGifPage = 1;
       hasMoreGifs = true;
+      renderedGifIds.clear();
     }
     if (isLoadingGifs || !hasMoreGifs) return;
     isLoadingGifs = true;
 
     try {
       const url = KLIPY_API_KEY
-        ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`
-        : `https://api.klipy.co/api/v1/gifs/search?q=${encodeURIComponent(query)}&limit=${GIF_LIMIT}&offset=${currentGifOffset}`;
+        ? `https://api.klipy.co/api/v1/${KLIPY_API_KEY}/gifs/search?q=${encodeURIComponent(query)}&page=${currentGifPage}&per_page=${GIF_LIMIT}`
+        : `https://api.klipy.co/api/v1/gifs/search?q=${encodeURIComponent(query)}&page=${currentGifPage}&per_page=${GIF_LIMIT}`;
 
       const data = await fetchKlipyJson(url);
       const newGifs = data.data?.data || [];
+      hasMoreGifs = (data.data?.has_next ?? true) && newGifs.length > 0;
       if (newGifs.length === 0) {
         hasMoreGifs = false;
       } else {
-        currentGifOffset += GIF_LIMIT;
+        currentGifPage++;
         renderGifs(newGifs, reset);
       }
     } catch (err) {
@@ -6214,7 +6285,10 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
   function renderGifs(gifs, reset = false) {
     const klipyResults = document.getElementById('c2p-klipy-results');
     if (!klipyResults) return;
-    if (reset) klipyResults.innerHTML = '';
+    if (reset) {
+      klipyResults.innerHTML = '';
+      renderedGifIds.clear();
+    }
 
     if (gifs.length === 0 && reset) {
       klipyResults.innerHTML = '<p style="text-align:center;color:#666;font-size:11px;grid-column:1/-1;margin-top:20px;">No GIFs found.</p>';
@@ -6222,6 +6296,10 @@ div:has(> [data-uia="playback-speed"]),div:has(> * > [data-uia="playback-speed"]
     }
 
     gifs.forEach(gifData => {
+      const gifKey = gifData.id ? String(gifData.id) : (gifData.url || null);
+      if (gifKey && renderedGifIds.has(gifKey)) return;
+      if (gifKey) renderedGifIds.add(gifKey);
+
       const imageUrl = gifData.file?.sm?.gif?.url || gifData.file?.md?.gif?.url || gifData.images?.downsized?.url || gifData.images?.original?.url || gifData.url;
       if (!imageUrl) return;
 
